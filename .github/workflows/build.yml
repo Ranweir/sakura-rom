@@ -58,7 +58,7 @@ jobs:
           persist.vendor.camera.HAL3.enabled=1
           persist.camera.HAL3.enabled=1
           persist.vendor.camera.eis.enable=1
-          persist.camera.expose.aux=1
+          persist.vendor.camera.expose.aux=1
           vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,com.miui.camera
           camera.hal1.packagelist=none
           EOF
@@ -127,34 +127,41 @@ jobs:
           echo "Size before cleaning:"
           sudo du -sh rootfs/
 
-          # 1. Remove all system wallpapers, super wallpapers, AOD, themes, overlays
+          # 1. Remove all system wallpapers, super wallpapers, AOD, themes, overlays safely with sudo
           sudo find rootfs/ -iname "*superwallpaper*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*alwaysondisplay*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*wallpaper*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*theme*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*overlay*" -type d -exec rm -rf {} + 2>/dev/null || true
 
-          # 2. Clean ringtones/notifications safely: Keep only 1 default ringtone and 1 notification tone
-          mkdir -p ~/work/saved_audio
-          find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" \) | grep -i "ringtone" | head -n 1 | xargs -I {} cp {} ~/work/saved_audio/ default_ring.ogg 2>/dev/null || true
-          find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" \) | grep -i "notification" | head -n 1 | xargs -I {} cp {} ~/work/saved_audio/ default_notif.ogg 2>/dev/null || true
-          
-          # Delete all audio/media folders and recreate with just the single default tones
-          sudo find rootfs/ -type d -name "media" -exec rm -rf {} + 2>/dev/null || true
-          sudo find rootfs/ -type d -name "ringtone*" -exec rm -rf {} + 2>/dev/null || true
-          sudo find rootfs/ -type d -name "alarm*" -exec rm -rf {} + 2>/dev/null || true
-          sudo find rootfs/ -type d -name "notification*" -exec rm -rf {} + 2>/dev/null || true
+          # 2. Save one default ringtone and one notification safely
+          sudo mkdir -p ~/work/saved_audio
+          RING=$(sudo find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" \) | grep -i "ringtone" | head -n 1 || true)
+          if [ -n "$RING" ]; then
+            sudo cp "$RING" ~/work/saved_audio/default_ring.ogg
+          fi
+          NOTIF=$(sudo find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" \) | grep -i "notification" | head -n 1 || true)
+          if [ -n "$NOTIF" ]; then
+            sudo cp "$NOTIF" ~/work/saved_audio/default_notif.ogg
+          fi
 
+          # Clean old media folders completely and recreate with single default tones
+          sudo rm -rf rootfs/system/product/media rootfs/product/media rootfs/system/media/audio
           sudo mkdir -p rootfs/system/media/audio/ringtones rootfs/system/media/audio/notifications
-          [ -f ~/work/saved_audio/default_ring.ogg ] && sudo cp ~/work/saved_audio/default_ring.ogg rootfs/system/media/audio/ringtones/MiRemix.ogg
-          [ -f ~/work/saved_audio/default_notif.ogg ] && sudo cp ~/work/saved_audio/default_notif.ogg rootfs/system/media/audio/notifications/Default.ogg
 
-          # 3. Universally remove non-essential bloatware apps by name anywhere in rootfs
-          for app in MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback Notes Calculator Weather MiRecorder MiCalendar Scanner ScreenRecorder YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto MSA AnalyticsCore Metok SettingsIntelligence HybridPlatform Joyose; do
+          if [ -f ~/work/saved_audio/default_ring.ogg ]; then
+            sudo cp ~/work/saved_audio/default_ring.ogg rootfs/system/media/audio/ringtones/MiRemix.ogg
+          fi
+          if [ -f ~/work/saved_audio/default_notif.ogg ]; then
+            sudo cp ~/work/saved_audio/default_notif.ogg rootfs/system/media/audio/notifications/Default.ogg
+          fi
+
+          # 3. Universally remove non-essential bloatware apps by name anywhere in rootfs using sudo
+          for app in MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback Notes Calculator Weather MiRecorder MiCalendar Scanner ScreenRecorder YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence; do
             sudo find rootfs/ -iname "*${app}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
-          # 4. Remove pre-compiled oat/vdex/art files to save massive space (~1.5GB)
+          # 4. Remove pre-compiled oat/vdex/art files to save massive space
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
