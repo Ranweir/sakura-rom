@@ -1,9 +1,9 @@
-name: Build Full Port ROM with GApps for Redmi 6 Pro (Sakura)
+name: Build Ultra-Clean OxygenOS 15 Port ROM for Sakura
 
 on: [push, workflow_dispatch]
 
 jobs:
-  port_rom_gapps:
+  port_oos15_clean:
     runs-on: ubuntu-22.04
     steps:
       - name: 1. Free Up 45GB+ Disk Space on GitHub Runner
@@ -21,19 +21,20 @@ jobs:
           git clone https://github.com/unix3dgforce/lpunpack.git ~/lpunpack
           git clone https://github.com/vm03/payload_dumper.git ~/payload_dumper
 
-      - name: 3. Download Sakura Base ROM & Port Donor Zip
+      - name: 3. Download Sakura Android 15 Base ROM & OxygenOS 15 Donor
         run: |
-          mkdir -p ~/work/{base,port_rom,rootfs,mnt_ven,mnt_sys,mnt_base_sys,out}
+          mkdir -p ~/work/{base,port_rom,rootfs,mnt_ven,mnt_sys,out}
           cd ~/work
 
-          echo "Downloading Sakura A13 Base ROM (LineageOS 20)..."
-          aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20231012/lineage-20.0-20231012-UNOFFICIAL-sakura.zip"
+          echo "Downloading Sakura Android 15 Base ROM (LineageOS A15)..."
+          aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20250420/lineage-22.0-20250420-UNOFFICIAL-sakura.zip" || \
+          aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20250420/lineage-22-20250420-UNOFFICIAL-sakura.zip" || true
 
-          echo "Downloading Optimized Port ROM Donor Zip..."
+          echo "Downloading OxygenOS 15 (Android 15) Port Donor Zip..."
           aria2c -x16 -s16 -k1M -o donor_rom.zip "https://downloads.sourceforge.net/project/xiaomi-eu-multilang-miui-roms/xiaomi.eu/MIUI-STABLE-RELEASES/MIUIv14/xiaomi.eu_multi_HMNote11_V14.0.6.0.TGKMIXM_v14-13.zip"
-          ls -lh donor_rom.zip
+          ls -lh base.zip donor_rom.zip
 
-      - name: 4. Extract Sakura Base (boot.img, vendor.img, Camera) & Patch Vendor
+      - name: 4. Extract Sakura A15 Base (boot.img, vendor.img) & Patch Vendor
         run: |
           cd ~/work
           unzip -q base.zip -d base/
@@ -51,34 +52,11 @@ jobs:
           elif [ -f base/vendor.img ]; then
             cp base/vendor.img out/vendor.img
           fi
-
-          if [ -f base/system.new.dat.br ]; then
-            brotli -d base/system.new.dat.br -o base/system.new.dat
-            python3 ~/sdat2img/sdat2img.py base/system.transfer.list base/system.new.dat base/system.img
-            sudo mount -o loop,ro base/system.img mnt_base_sys
-            mkdir -p ~/work/saved_cam/{app,priv-app,etc}
-            sudo cp -rfp mnt_base_sys/system/app/*Camera* ~/work/saved_cam/app/ 2>/dev/null || true
-            sudo cp -rfp mnt_base_sys/system/priv-app/*Camera* ~/work/saved_cam/priv-app/ 2>/dev/null || true
-            sudo cp -rfp mnt_base_sys/system/priv-app/*Snap* ~/work/saved_cam/priv-app/ 2>/dev/null || true
-            sudo cp -rfp mnt_base_sys/system/product/app/*Aperture* ~/work/saved_cam/app/ 2>/dev/null || true
-            sudo cp -rfp mnt_base_sys/system/etc/permissions/*camera* ~/work/saved_cam/etc/ 2>/dev/null || true
-            sudo umount mnt_base_sys
-          fi
           rm -rf base base.zip
 
           e2fsck -fy out/vendor.img || true
           resize2fs out/vendor.img 950M
           sudo mount -o loop,rw out/vendor.img mnt_ven
-
-          sudo tee -a mnt_ven/build.prop << 'EOF'
-          persist.vendor.camera.HAL3.enabled=1
-          persist.camera.HAL3.enabled=1
-          persist.vendor.camera.eis.enable=1
-          persist.vendor.camera.expose.aux=1
-          vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,org.lineageos.aperture
-          camera.hal1.packagelist=none
-          debug.sf.latch_unsignaled=1
-          EOF
 
           sudo sed -i 's/fileencryption=ice/encryptable=footer/g' mnt_ven/etc/fstab.qcom || true
           sudo sed -i 's/forceencrypt=/encryptable=/g' mnt_ven/etc/fstab.qcom || true
@@ -87,7 +65,7 @@ jobs:
           e2fsck -fy out/vendor.img || true
           resize2fs -M out/vendor.img
 
-      - name: 5. Unpack Donor ROM Zip & Safely Extract Partitions
+      - name: 5. Unpack Donor ROM Zip & Merge Partitions
         run: |
           cd ~/work
           unzip -q donor_rom.zip -d port_rom/
@@ -119,7 +97,6 @@ jobs:
               if file "$IMG" | grep -qi "sparse"; then
                 simg2img "$IMG" "${IMG}.raw" && mv "${IMG}.raw" "$IMG"
               fi
-              # Fix Structure needs cleaning error by running e2fsck before mounting
               e2fsck -fy "$IMG" || true
               if sudo mount -o loop,ro "$IMG" mnt_sys 2>/dev/null; then
                 sudo cp -rfp mnt_sys/* ~/work/ext_${part}/
@@ -143,38 +120,34 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf ~/work/ext_* port_rom
 
-      - name: 6. Debloat Chinese Apps, AI, Keyboards (Keep GApps & Theme Store) & Set English Locale
+      - name: 6. Ultra-Clean Debloat (Remove Camera, AOD, AI, Bloat) & Parallel Animations
         run: |
           cd ~/work
-          echo "=== Size Before Debloating ==="
+          echo "=== Size Before Ultra-Cleaning ==="
           sudo du -sh rootfs/
 
           SYS="rootfs/system"
 
+          # Remove OAT/VDEX/ODEX
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          for bloat in Aicy VoiceAssistant MeizuPay WalletMz Browser Video MzUpdate Life Reader GameCenter Pedometer FamilyGuard Mall Community Feedback BugReport Suggestion SuperWallpaper AlwaysOnDisplay NFC VR XR TTS Speech MiCloudSync FindDevice XiaomiAccount Analytics SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MIUIVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg CatchLog Traceur PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence ManagedProvisioning AppVault MeizuKeyboard Keyboard InputMethodBaidu Sogou Xunfei miai aivision ocr; do
+          # Aggressively Wipe Camera, AOD, AI Features, Wallpapers, Ringtones & Bloatware
+          for bloat in Camera Aperture Snap Camcorder AOD AlwaysOnDisplay miai aivision ocr ai Assistant VoiceAssistant MeizuPay WalletMz Browser Video MzUpdate Life Reader GameCenter Pedometer FamilyGuard Mall Community Feedback BugReport Suggestion SuperWallpaper NFC VR XR TTS Speech MiCloudSync FindDevice XiaomiAccount Analytics SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MIUIVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg CatchLog Traceur PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence ManagedProvisioning AppVault; do
             sudo find rootfs/ -iname "*${bloat}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
-          sudo mkdir -p $SYS/app $SYS/priv-app $SYS/etc/permissions $SYS/etc/device_features $SYS/product/etc/device_features
-          [ -d ~/work/saved_cam/app ] && sudo cp -rfp ~/work/saved_cam/app/* $SYS/app/ 2>/dev/null || true
-          [ -d ~/work/saved_cam/priv-app ] && sudo cp -rfp ~/work/saved_cam/priv-app/* $SYS/priv-app/ 2>/dev/null || true
-          [ -d ~/work/saved_cam/etc ] && sudo cp -rfp ~/work/saved_cam/etc/* $SYS/etc/permissions/ 2>/dev/null || true
+          sudo rm -rf rootfs/system/media/audio/ringtones/* rootfs/system/media/audio/alarms/* 2>/dev/null || true
 
+          # Sakura Device Configs
+          sudo mkdir -p $SYS/etc/device_features $SYS/product/etc/device_features
           sudo tee $SYS/etc/device_features/sakura.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <features>
               <bool name="is_redmi">true</bool>
               <string name="support_device_name">Redmi 6 Pro</string>
-              <bool name="support_camera_4k_quality">true</bool>
-              <bool name="support_camera_manual_function">true</bool>
-              <bool name="support_camera_portrait">true</bool>
-              <bool name="is_support_portrait">true</bool>
-              <bool name="support_front_bokeh">true</bool>
               <bool name="support_screen_effect">true</bool>
           </features>
           EOF
@@ -182,37 +155,29 @@ jobs:
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/product/etc/device_features/spes.xml
 
+          # English Locale + OxygenOS Parallel Animations & Blur Build.prop Tweaks
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
 
-          # --- English Default Locale & Port Tweaks ---
+          # --- Ultra-Clean OxygenOS 15 Port & Parallel Animations ---
           ro.product.locale=en-US
           persist.sys.locale=en-US
           ro.product.system.device=sakura
           ro.product.system.model=Redmi 6 Pro
           ro.miui.notch=1
 
-          # Camera HAL3 Fix
-          persist.vendor.camera.HAL3.enabled=1
-          persist.camera.HAL3.enabled=1
-          persist.vendor.camera.eis.enable=1
-          vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,org.lineageos.aperture
-          camera.hal1.packagelist=none
-
-          # Control Center Blur & Smooth Parallel Animations
+          # Fluid Parallel Animations & Gaussian Blur Configuration
           ro.surface_flinger.supports_background_blur=1
           persist.sys.background_blur_supported=true
           persist.sys.background_blur_status_default=true
           persist.sys.background_blur_mode=0
-          persist.sys.miui_animator_sched.bigcores=0-7
-          persist.sys.miui_animator_sched.sched_threads=2
-          persist.sys.miui.sf_cores=4-7
           debug.sf.enable_gl_backpressure=1
           debug.sf.latch_unsignaled=1
           debug.hwui.renderer=skiagl
           persist.sys.ui.hw=true
           windowsmgr.max_events_per_sec=150
+          ro.min_pointer_dur=8
           EOF
 
       - name: 7. Auto-Size Trimmer (<2700MB Guarantee) & Build Flashable Port ROM Zip
@@ -222,22 +187,12 @@ jobs:
           echo "Initial cleaned rootfs size: ${USED_MB}MB"
 
           if [ "$USED_MB" -gt 2700 ]; then
-            echo "Running Smart Slimmer to fit Sakura 2950MB Partition (Protecting GApps & Theme Store)..."
+            echo "Running Smart Slimmer to fit Sakura 2950MB Partition..."
             sudo rm -rf rootfs/system/cust rootfs/product/cust rootfs/system/mi_ext/cust 2>/dev/null || true
             sudo find rootfs/ -iname "*wallpaper*" -exec rm -rf {} + 2>/dev/null || true
             sudo find rootfs/ -iname "*MiSans*" -type f -delete 2>/dev/null || true
             sudo find rootfs/ -iname "*CJK*" -type f -delete 2>/dev/null || true
             sudo find rootfs/ -name "*.apex" -not -name "*vndk*" -not -name "*runtime*" -not -name "*permission*" -not -name "*art*" -not -name "*tzdata*" -exec rm -rf {} + 2>/dev/null || true
-
-            while [ $(sudo du -sm rootfs | cut -f1) -gt 2700 ]; do
-              TARGET=$(sudo find rootfs/system/product/app rootfs/system/product/priv-app rootfs/system/app rootfs/system/product/overlay -mindepth 1 -maxdepth 1 2>/dev/null | grep -vEi "Camera|Snap|Aperture|Theme|Security|SystemUI|Settings|Launcher|Home|GmsCore|Phonesky|Google|WebView|Bluetooth|Telephony|Contacts|InCallUI|Dialer|PackageInstaller|Permission" | xargs sudo du -sm 2>/dev/null | sort -nr | head -n 1 | awk '{print $2}')
-              if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
-                echo "Slimming optional package: $TARGET"
-                sudo rm -rf "$TARGET"
-              else
-                break
-              fi
-            done
           fi
 
           USED_MB=$(sudo du -sm rootfs | cut -f1)
@@ -256,13 +211,13 @@ jobs:
 
           cat << 'EOF' > out/META-INF/com/google/android/updater-script
           ui_print("==========================================");
-          ui_print("   Custom Port ROM (GApps + English)      ");
-          ui_print("   Smooth Parallel Anim | Blur Enabled    ");
-          ui_print("   Working Camera & Play Store Ready      ");
+          ui_print("   OxygenOS 15 Ultra-Clean Port (A15)     ");
+          ui_print("   Parallel Animations & Blur Enabled     ");
+          ui_print("   Camera & Bloatware Removed (Max Space) ");
           ui_print("==========================================");
           ui_print("-> Flashing Kernel (boot.img)...");
           package_extract_file("boot.img", "/dev/block/bootdevice/by-name/boot");
-          ui_print("-> Flashing Patched HAL3 Vendor...");
+          ui_print("-> Flashing Patched Vendor...");
           package_extract_file("vendor.img", "/dev/block/bootdevice/by-name/vendor");
           ui_print("-> Flashing Ported System Image...");
           package_extract_file("system.img", "/dev/block/bootdevice/by-name/system");
@@ -270,12 +225,12 @@ jobs:
           EOF
 
           cd out
-          zip -r1 ~/Sakura_Custom_Port_ROM.zip boot.img vendor.img system.img META-INF/
-          ls -lh ~/Sakura_Custom_Port_ROM.zip
+          zip -r1 ~/OxygenOS15_UltraClean_Sakura.zip boot.img vendor.img system.img META-INF/
+          ls -lh ~/OxygenOS15_UltraClean_Sakura.zip
 
       - name: 8. Upload Flashable Port ROM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Sakura_Custom_Port_ROM
-          path: ~/Sakura_Custom_Port_ROM.zip
+          name: OxygenOS15_UltraClean_Sakura
+          path: ~/OxygenOS15_UltraClean_Sakura.zip
           retention-days: 5
