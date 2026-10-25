@@ -119,7 +119,7 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf ~/work/ext_* port_rom
 
-      - name: 6. Ultra-Clean Debloat (Remove Camera, AOD, AI, Bloat) & Parallel Animations
+      - name: 6. Ultra-Clean Debloat & Depth Effect / Parallel Animations Setup
         run: |
           cd ~/work
           echo "=== Size Before Ultra-Cleaning ==="
@@ -132,12 +132,14 @@ jobs:
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
+          # Remove AI, AOD, Unsupported Features, and Bloatware (Keeping Essential Apps)
           for bloat in Camera Aperture Snap Camcorder AOD AlwaysOnDisplay miai aivision ocr ai Assistant VoiceAssistant MeizuPay WalletMz Browser Video MzUpdate Life Reader GameCenter Pedometer FamilyGuard Mall Community Feedback BugReport Suggestion SuperWallpaper NFC VR XR TTS Speech MiCloudSync FindDevice XiaomiAccount Analytics SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MIUIVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg CatchLog Traceur PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence ManagedProvisioning AppVault; do
             sudo find rootfs/ -iname "*${bloat}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
           sudo rm -rf rootfs/system/media/audio/ringtones/* rootfs/system/media/audio/alarms/* 2>/dev/null || true
 
+          # Sakura Device Configs
           sudo mkdir -p $SYS/etc/device_features $SYS/product/etc/device_features
           sudo tee $SYS/etc/device_features/sakura.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -151,17 +153,23 @@ jobs:
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/product/etc/device_features/spes.xml
 
+          # Locale, Depth Effect, Blur & Parallel Animations Build.prop Tweaks
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
 
-          # --- Ultra-Clean Port & Parallel Animations ---
+          # --- Custom Port Tweaks: Depth Effect & Animations ---
           ro.product.locale=en-US
           persist.sys.locale=en-US
           ro.product.system.device=sakura
           ro.product.system.model=Redmi 6 Pro
           ro.miui.notch=1
 
+          # Lockscreen Depth Effect Support
+          ro.lockscreen.depth_effect.enabled=true
+          persist.sys.lockscreen.depth_wallpaper=true
+
+          # Blur & Fluid Parallel Animations
           ro.surface_flinger.supports_background_blur=1
           persist.sys.background_blur_supported=true
           persist.sys.background_blur_status_default=true
@@ -174,25 +182,35 @@ jobs:
           ro.min_pointer_dur=8
           EOF
 
-      - name: 7. Auto-Size Trimmer (<2700MB Guarantee) & Build Flashable Port ROM Zip
+      - name: 7. Auto-Size Trimmer (<2650MB Guarantee) & Build Flashable Port ROM Zip
         run: |
           cd ~/work
           USED_MB=$(sudo du -sm rootfs | cut -f1)
           echo "Initial cleaned rootfs size: ${USED_MB}MB"
 
-          if [ "$USED_MB" -gt 2700 ]; then
-            echo "Running Smart Slimmer to fit Sakura 2950MB Partition..."
+          if [ "$USED_MB" -gt 2650 ]; then
+            echo "Running Smart Slimmer to fit Sakura 2950MB Partition safely..."
             sudo rm -rf rootfs/system/cust rootfs/product/cust rootfs/system/mi_ext/cust 2>/dev/null || true
             sudo find rootfs/ -iname "*wallpaper*" -exec rm -rf {} + 2>/dev/null || true
             sudo find rootfs/ -iname "*MiSans*" -type f -delete 2>/dev/null || true
             sudo find rootfs/ -iname "*CJK*" -type f -delete 2>/dev/null || true
             sudo find rootfs/ -name "*.apex" -not -name "*vndk*" -not -name "*runtime*" -not -name "*permission*" -not -name "*art*" -not -name "*tzdata*" -exec rm -rf {} + 2>/dev/null || true
+
+            while [ $(sudo du -sm rootfs | cut -f1) -gt 2650 ]; do
+              TARGET=$(sudo find rootfs/system/product/app rootfs/system/product/priv-app rootfs/system/app rootfs/system/product/overlay -mindepth 1 -maxdepth 1 2>/dev/null | grep -vEi "Theme|Security|SystemUI|Settings|Launcher|Home|GmsCore|Phonesky|Google|WebView|Bluetooth|Telephony|Contacts|InCallUI|Dialer|PackageInstaller|Permission" | xargs sudo du -sm 2>/dev/null | sort -nr | head -n 1 | awk '{print $2}')
+              if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
+                echo "Slimming optional package: $TARGET"
+                sudo rm -rf "$TARGET"
+              else
+                break
+              fi
+            done
           fi
 
           USED_MB=$(sudo du -sm rootfs | cut -f1)
-          IMG_MB=$((USED_MB + 160))
-          if [ "$IMG_MB" -gt 2950 ]; then
-            IMG_MB=2950
+          IMG_MB=$((USED_MB + 180))
+          if [ "$IMG_MB" -gt 2900 ]; then
+            IMG_MB=2900
           fi
 
           echo "=== Final Port ROM Used Space: ${USED_MB}MB | Building system.img of ${IMG_MB}MB ==="
@@ -205,8 +223,8 @@ jobs:
 
           cat << 'EOF' > out/META-INF/com/google/android/updater-script
           ui_print("==========================================");
-          ui_print("   Custom Port ROM (Ultra-Clean)          ");
-          ui_print("   Parallel Animations & Blur Enabled     ");
+          ui_print("   Custom Port ROM (Depth Effect Enabled) ");
+          ui_print("   Parallel Animations & Blur Active      ");
           ui_print("==========================================");
           ui_print("-> Flashing Kernel (boot.img)...");
           package_extract_file("boot.img", "/dev/block/bootdevice/by-name/boot");
@@ -218,12 +236,12 @@ jobs:
           EOF
 
           cd out
-          zip -r1 ~/Sakura_UltraClean_Port.zip boot.img vendor.img system.img META-INF/
-          ls -lh ~/Sakura_UltraClean_Port.zip
+          zip -r1 ~/Sakura_DepthEffect_Port.zip boot.img vendor.img system.img META-INF/
+          ls -lh ~/Sakura_DepthEffect_Port.zip
 
       - name: 8. Upload Flashable Port ROM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Sakura_UltraClean_Port
-          path: ~/Sakura_UltraClean_Port.zip
+          name: Sakura_DepthEffect_Port
+          path: ~/Sakura_DepthEffect_Port.zip
           retention-days: 5
