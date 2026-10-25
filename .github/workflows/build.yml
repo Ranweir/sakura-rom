@@ -1,9 +1,9 @@
-name: Build FlymeOS 10 Proper Port ROM for Redmi 6 Pro (Sakura)
+name: Build Full Port ROM with GApps for Redmi 6 Pro (Sakura)
 
 on: [push, workflow_dispatch]
 
 jobs:
-  port_flyme_rom:
+  port_rom_gapps:
     runs-on: ubuntu-22.04
     steps:
       - name: 1. Free Up 45GB+ Disk Space on GitHub Runner
@@ -21,95 +21,19 @@ jobs:
           git clone https://github.com/unix3dgforce/lpunpack.git ~/lpunpack
           git clone https://github.com/vm03/payload_dumper.git ~/payload_dumper
 
-      - name: 3. Download Sakura Base ROM & Official FlymeOS 10 Donor Firmware (NO GSI)
+      - name: 3. Download Sakura Base ROM & Official FlymeOS 10 / Port Donor
         run: |
-          mkdir -p ~/work/{base,flyme_port,rootfs,mnt_ven,mnt_sys,mnt_base_sys,out}
+          mkdir -p ~/work/{base,port_rom,rootfs,mnt_ven,mnt_sys,mnt_base_sys,out}
           cd ~/work
 
           echo "Downloading Sakura A13 Base ROM (LineageOS 20)..."
           aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20231012/lineage-20.0-20231012-UNOFFICIAL-sakura.zip"
 
-          echo "Searching Official FlymeOS 10 Full Stock Firmware & Port ROMs (Strictly NO GSI)..."
-          cat << 'EOF' > find_flyme_rom.py
-          import urllib.request, urllib.parse, json, re
-
-          candidates = [
-              # Official Meizu CDN - Full FlymeOS 10 Android 13 Stock ROMs (update.zip)
-              "https://firmware.meizu.com/Firmware/Flyme/meizu20/10.0.1.0A/cn/20230330191839/7956384b/update.zip",
-              "https://firmware.meizu.com/Firmware/Flyme/meizu20pro/10.0.1.0A/cn/20230330192511/4c82910a/update.zip",
-              "https://firmware.meizu.com/Firmware/Flyme/18s/10.3.0.0A/cn/20230509152212/f62b1c9d/update.zip",
-              "https://firmware.meizu.com/Firmware/Flyme/18/10.3.0.0A/cn/20230509151044/a12c489b/update.zip"
-          ]
-
-          # 1. Search Archive.org for Official Meizu Flyme 10 Full Firmware Zips (Excluding GSI)
-          try:
-              ia_url = "https://archive.org/advancedsearch.php?q=Flyme+10+AND+NOT+GSI&fl[]=identifier&rows=20&output=json"
-              req = urllib.request.Request(ia_url, headers={'User-Agent': 'Mozilla/5.0'})
-              data = json.loads(urllib.request.urlopen(req, timeout=12).read().decode())
-              for doc in data.get('response', {}).get('docs', []):
-                  ident = doc['identifier']
-                  if 'gsi' in ident.lower():
-                      continue
-                  m_url = f"https://archive.org/metadata/{ident}"
-                  m_data = json.loads(urllib.request.urlopen(m_url, timeout=10).read().decode())
-                  for f in m_data.get('files', []):
-                      name = f.get('name', '')
-                      size = int(f.get('size', 0) or 0)
-                      if size > 1500000000 and name.lower().endswith('.zip') and 'gsi' not in name.lower():
-                          candidates.append(f"https://archive.org/download/{ident}/{urllib.parse.quote(name)}")
-          except Exception:
-              pass
-
-          # 2. Search SourceForge Device Port ROM Projects (Strictly Full Port Zips, NO GSI)
-          sf_ports = ["meizu-roms", "flyme-ports", "redmi-note-11-roms", "spes-roms", "lavender-roms"]
-          for proj in sf_ports:
-              try:
-                  req = urllib.request.Request(
-                      f"https://sourceforge.net/projects/{proj}/rss?limit=200",
-                      headers={'User-Agent': 'Mozilla/5.0'}
-                  )
-                  xml = urllib.request.urlopen(req, timeout=10).read().decode('utf-8', errors='ignore')
-                  links = re.findall(r'<link>(https://sourceforge\.net/projects/[^<]+/download)</link>', xml)
-                  for l in links:
-                      if 'flyme' in l.lower() and '.zip' in l.lower() and 'gsi' not in l.lower():
-                          direct = l.replace('https://sourceforge.net/projects/', 'https://downloads.sourceforge.net/project/')
-                          direct = direct.replace('/files/', '/').replace('/download', '')
-                          candidates.append(direct)
-              except Exception:
-                  pass
-
-          seen = set()
-          for u in candidates:
-              if u not in seen:
-                  seen.add(u)
-                  print(u)
-          EOF
-
-          python3 find_flyme_rom.py > rom_urls.txt
-          cat rom_urls.txt
-
-          DOWNLOADED=0
-          while read -r url; do
-            [ -z "$url" ] && continue
-            echo "Attempting Full Donor ROM Download from: $url"
-            rm -f donor_rom.zip
-            if aria2c -x16 -s16 -k1M --max-tries=2 --timeout=25 --connect-timeout=15 -o donor_rom.zip "$url"; then
-              if [ -f donor_rom.zip ] && [ $(stat -c%s donor_rom.zip) -gt 1000000000 ]; then
-                echo "Successfully downloaded Official FlymeOS Donor ROM!"
-                DOWNLOADED=1
-                break
-              fi
-            fi
-          done < rom_urls.txt
-
-          if [ "$DOWNLOADED" -eq 0 ]; then
-            echo "Meizu CDN busy, using verified Snapdragon A13 Full Donor ROM Zip (spes) with Auto-Slimmer..."
-            aria2c -x16 -s16 -k1M -o donor_rom.zip "https://downloads.sourceforge.net/project/xiaomi-eu-multilang-miui-roms/xiaomi.eu/MIUI-STABLE-RELEASES/MIUIv14/xiaomi.eu_multi_HMNote11_V14.0.6.0.TGKMIXM_v14-13.zip"
-          fi
-
+          echo "Downloading Optimized Port ROM Donor Zip..."
+          aria2c -x16 -s16 -k1M -o donor_rom.zip "https://downloads.sourceforge.net/project/xiaomi-eu-multilang-miui-roms/xiaomi.eu/MIUI-STABLE-RELEASES/MIUIv14/xiaomi.eu_multi_HMNote11_V14.0.6.0.TGKMIXM_v14-13.zip"
           ls -lh donor_rom.zip
 
-      - name: 4. Extract Sakura Base (boot.img, vendor.img, Base Camera) & Patch Vendor
+      - name: 4. Extract Sakura Base (boot.img, vendor.img, Camera) & Patch Vendor
         run: |
           cd ~/work
           unzip -q base.zip -d base/
@@ -121,7 +45,6 @@ jobs:
             chmod 755 out/META-INF/com/google/android/update-binary
           fi
 
-          # Extract Base Vendor
           if [ -f base/vendor.new.dat.br ]; then
             brotli -d base/vendor.new.dat.br -o base/vendor.new.dat
             python3 ~/sdat2img/sdat2img.py base/vendor.transfer.list base/vendor.new.dat out/vendor.img
@@ -129,7 +52,6 @@ jobs:
             cp base/vendor.img out/vendor.img
           fi
 
-          # Salvage Working Default Sakura Camera & Permissions from Base ROM
           if [ -f base/system.new.dat.br ]; then
             brotli -d base/system.new.dat.br -o base/system.new.dat
             python3 ~/sdat2img/sdat2img.py base/system.transfer.list base/system.new.dat base/system.img
@@ -144,7 +66,6 @@ jobs:
           fi
           rm -rf base base.zip
 
-          # Patch Vendor for Camera2API (HAL3), EIS & Smoothness
           e2fsck -fy out/vendor.img || true
           resize2fs out/vendor.img 950M
           sudo mount -o loop,rw out/vendor.img mnt_ven
@@ -154,7 +75,7 @@ jobs:
           persist.camera.HAL3.enabled=1
           persist.vendor.camera.eis.enable=1
           persist.vendor.camera.expose.aux=1
-          vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,com.meizu.media.camera,org.lineageos.aperture
+          vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,org.lineageos.aperture
           camera.hal1.packagelist=none
           debug.sf.latch_unsignaled=1
           EOF
@@ -166,37 +87,34 @@ jobs:
           e2fsck -fy out/vendor.img || true
           resize2fs -M out/vendor.img
 
-      - name: 5. Unpack Full Donor ROM Zip (payload.bin / super.img / br) & Merge Partitions
+      - name: 5. Unpack Donor ROM Zip & Merge Partitions
         run: |
           cd ~/work
-          unzip -q donor_rom.zip -d flyme_port/
+          unzip -q donor_rom.zip -d port_rom/
           rm -f donor_rom.zip
 
-          if [ -f flyme_port/payload.bin ]; then
-            echo "Extracting payload.bin from Official Stock Firmware..."
-            python3 ~/payload_dumper/payload_dumper.py flyme_port/payload.bin --out flyme_port/
-            rm -f flyme_port/payload.bin
-          elif ls flyme_port/images/super.img* >/dev/null 2>&1 || ls flyme_port/super.img* >/dev/null 2>&1; then
-            echo "Merging & Unpacking super.img from Donor ROM..."
-            SUPER_CHUNKS=$(find flyme_port/ -name "super.img*" | sort -V)
-            simg2img $SUPER_CHUNKS flyme_port/super.raw.img || mv $(echo $SUPER_CHUNKS | awk '{print $1}') flyme_port/super.raw.img
-            rm -rf flyme_port/images
-            python3 ~/lpunpack/lpunpack.py flyme_port/super.raw.img flyme_port/
-            rm -f flyme_port/super.raw.img
+          if [ -f port_rom/payload.bin ]; then
+            python3 ~/payload_dumper/payload_dumper.py port_rom/payload.bin --out port_rom/
+            rm -f port_rom/payload.bin
+          elif ls port_rom/images/super.img* >/dev/null 2>&1 || ls port_rom/super.img* >/dev/null 2>&1; then
+            SUPER_CHUNKS=$(find port_rom/ -name "super.img*" | sort -V)
+            ssimgr=$([ -f /usr/bin/simg2img ] && echo "simg2img" || echo "")
+            $simg2img $SUPER_CHUNKS port_rom/super.raw.img || mv $(echo $SUPER_CHUNKS | awk '{print $1}') port_rom/super.raw.img
+            rm -rf port_rom/images
+            python3 ~/lpunpack/lpunpack.py port_rom/super.raw.img port_rom/
+            rm -f port_rom/super.raw.img
           fi
 
-          # Convert any .new.dat.br partitions (Standard Meizu / Port ROM format)
           for part in system product system_ext mi_ext; do
-            if [ -f "flyme_port/${part}.new.dat.br" ]; then
-              brotli -d "flyme_port/${part}.new.dat.br" -o "flyme_port/${part}.new.dat"
-              python3 ~/sdat2img/sdat2img.py "flyme_port/${part}.transfer.list" "flyme_port/${part}.new.dat" "flyme_port/${part}.img"
-              rm -f "flyme_port/${part}.new.dat"*
+            if [ -f "port_rom/${part}.new.dat.br" ]; then
+              brotli -d "port_rom/${part}.new.dat.br" -o "port_rom/${part}.new.dat"
+              python3 ~/sdat2img/sdat2img.py "port_rom/${part}.transfer.list" "port_rom/${part}.new.dat" "port_rom/${part}.img"
+              rm -f "port_rom/${part}.new.dat"*
             fi
           done
 
-          # Extract and Merge system, product, system_ext into rootfs
           for part in system product system_ext mi_ext; do
-            IMG=$(find flyme_port/ -name "${part}_a.img" -o -name "${part}.img" | head -n 1)
+            IMG=$(find port_rom/ -name "${part}_a.img" -o -name "${part}.img" | head -n 1)
             if [ -n "$IMG" ] && [ -s "$IMG" ]; then
               mkdir -p ~/work/ext_${part}
               if file "$IMG" | grep -qi "sparse"; then
@@ -222,34 +140,34 @@ jobs:
 
           sudo ln -sf /system/product rootfs/product
           sudo ln -sf /system/system_ext rootfs/system_ext
-          sudo rm -rf ~/work/ext_* flyme_port
+          sudo rm -rf ~/work/ext_* port_rom
 
-      - name: 6. Port ROM Patches, Default Camera Injection & Parallel Animations
+      - name: 6. Debloat Chinese Apps, AI, Keyboards (Keep GApps & Theme Store) & Set English Locale
         run: |
           cd ~/work
-          echo "=== Donor ROM Size Before Cleaning ==="
+          echo "=== Size Before Debloating ==="
           sudo du -sh rootfs/
 
           SYS="rootfs/system"
 
-          # 1. Strip OAT/VDEX/ODEX, Bloatware, Heavy Videos, AI Models & Extra Fonts (Keeping Theme Store & Security App)
+          # Remove OAT/VDEX/ODEX
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
-          sudo find rootfs/ -name "*.mp4" -type f -delete 2>/dev/null || true
 
-          for bloat in Aicy VoiceAssistant MeizuPay WalletMz Browser Video MzUpdate Life Reader GameCenter Pedometer FamilyGuard Mall Community Feedback BugReport Suggestion SuperWallpaper AlwaysOnDisplay NFC VR XR TTS Speech MiCloudSync FindDevice XiaomiAccount Analytics SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MIUIVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg CatchLog Traceur GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence ManagedProvisioning AppVault; do
+          # Target Chinese Apps, AI models, Flyme/Chinese Keyboards, Bloatware (Protecting GApps: GmsCore, Phonesky)
+          for bloat in Aicy VoiceAssistant MeizuPay WalletMz Browser Video MzUpdate Life Reader GameCenter Pedometer FamilyGuard Mall Community Feedback BugReport Suggestion SuperWallpaper AlwaysOnDisplay NFC VR XR TTS Speech MiCloudSync FindDevice XiaomiAccount Analytics SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MIUIVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg CatchLog Traceur PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence ManagedProvisioning AppVault MeizuKeyboard Keyboard InputMethodBaidu Sogou Xunfei miai aivision ocr; do
             sudo find rootfs/ -iname "*${bloat}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
-          # 2. Inject Working Default Sakura Camera alongside Stock Camera
+          # Inject Default Camera
           sudo mkdir -p $SYS/app $SYS/priv-app $SYS/etc/permissions $SYS/etc/device_features $SYS/product/etc/device_features
           [ -d ~/work/saved_cam/app ] && sudo cp -rfp ~/work/saved_cam/app/* $SYS/app/ 2>/dev/null || true
           [ -d ~/work/saved_cam/priv-app ] && sudo cp -rfp ~/work/saved_cam/priv-app/* $SYS/priv-app/ 2>/dev/null || true
           [ -d ~/work/saved_cam/etc ] && sudo cp -rfp ~/work/saved_cam/etc/* $SYS/etc/permissions/ 2>/dev/null || true
 
-          # 3. Sakura Device Features & Rounded Corner Notch Support
+          # Sakura Device Features
           sudo tee $SYS/etc/device_features/sakura.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <features>
@@ -267,25 +185,26 @@ jobs:
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/product/etc/device_features/spes.xml
 
-          # 4. Port ROM Build.prop Tweaks (Smooth Parallel Animations + Control Center Blur + Camera HAL3)
+          # Set English (en-US) Default Language & Parallel Animations Build.prop Tweaks
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
 
-          # --- Sakura Full Port ROM Tweaks ---
+          # --- English Default Locale & Port Tweaks ---
+          ro.product.locale=en-US
+          persist.sys.locale=en-US
           ro.product.system.device=sakura
           ro.product.system.model=Redmi 6 Pro
           ro.miui.notch=1
-          ro.build.Flyme.SplitScreen=true
 
-          # Default Camera HAL3 Fix
+          # Camera HAL3 Fix
           persist.vendor.camera.HAL3.enabled=1
           persist.camera.HAL3.enabled=1
           persist.vendor.camera.eis.enable=1
-          vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,com.meizu.media.camera,org.lineageos.aperture
+          vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,org.lineageos.aperture
           camera.hal1.packagelist=none
 
-          # Real-Time Control Center Blur & Smooth Parallel Animations
+          # Control Center Blur & Smooth Parallel Animations
           ro.surface_flinger.supports_background_blur=1
           persist.sys.background_blur_supported=true
           persist.sys.background_blur_status_default=true
@@ -300,27 +219,22 @@ jobs:
           windowsmgr.max_events_per_sec=150
           EOF
 
-      - name: 7. Auto-Size Trimmer (<2720MB Guarantee) & Build Flashable Port ROM Zip
+      - name: 7. Auto-Size Trimmer (<2700MB Guarantee) & Build Flashable Port ROM Zip
         run: |
           cd ~/work
           USED_MB=$(sudo du -sm rootfs | cut -f1)
           echo "Initial cleaned rootfs size: ${USED_MB}MB"
 
-          # Guaranteed Partition Fit: Automatically trim non-boot heavy files until rootfs is <= 2700MB
           if [ "$USED_MB" -gt 2700 ]; then
-            echo "Running Smart Port ROM Slimmer to fit Sakura 2950MB Partition..."
+            echo "Running Smart Slimmer to fit Sakura 2950MB Partition (Protecting GApps & Theme Store)..."
             sudo rm -rf rootfs/system/cust rootfs/product/cust rootfs/system/mi_ext/cust 2>/dev/null || true
-            sudo rm -rf rootfs/system/product/data-app/* rootfs/system/data-app/* 2>/dev/null || true
             sudo find rootfs/ -iname "*wallpaper*" -exec rm -rf {} + 2>/dev/null || true
             sudo find rootfs/ -iname "*MiSans*" -type f -delete 2>/dev/null || true
             sudo find rootfs/ -iname "*CJK*" -type f -delete 2>/dev/null || true
-            sudo find rootfs/ -iname "*NotoSans*" -not -iname "*Regular*" -type f -delete 2>/dev/null || true
             sudo find rootfs/ -name "*.apex" -not -name "*vndk*" -not -name "*runtime*" -not -name "*permission*" -not -name "*art*" -not -name "*tzdata*" -exec rm -rf {} + 2>/dev/null || true
-            sudo find rootfs/ -path "*/lib/*.so" -not -name "*cam*" -not -name "* libc*" -not -name "*libm*" -not -name "*libdl*" -size +5M -delete 2>/dev/null || true
 
-            # Loop to remove largest non-essential apps/overlays if still > 2700MB (Protects Camera, ThemeManager, SecurityCenter, SystemUI)
             while [ $(sudo du -sm rootfs | cut -f1) -gt 2700 ]; do
-              TARGET=$(sudo find rootfs/system/product/app rootfs/system/product/priv-app rootfs/system/app rootfs/system/product/overlay -mindepth 1 -maxdepth 1 2>/dev/null | grep -vEi "Camera|Snap|Aperture|Theme|Security|SystemUI|Settings|Launcher|Home|MIUISystemUI|Flyme|WebView|Bluetooth|Telephony|Contacts|InCallUI|Dialer|PackageInstaller|Permission" | xargs sudo du -sm 2>/dev/null | sort -nr | head -n 1 | awk '{print $2}')
+              TARGET=$(sudo find rootfs/system/product/app rootfs/system/product/priv-app rootfs/system/app rootfs/system/product/overlay -mindepth 1 -maxdepth 1 2>/dev/null | grep -vEi "Camera|Snap|Aperture|Theme|Security|SystemUI|Settings|Launcher|Home|GmsCore|Phonesky|Google|WebView|Bluetooth|Telephony|Contacts|InCallUI|Dialer|PackageInstaller|Permission" | xargs sudo du -sm 2>/dev/null | sort -nr | head -n 1 | awk '{print $2}')
               if [ -n "$TARGET" ] && [ -e "$TARGET" ]; then
                 echo "Slimming optional package: $TARGET"
                 sudo rm -rf "$TARGET"
@@ -346,9 +260,9 @@ jobs:
 
           cat << 'EOF' > out/META-INF/com/google/android/updater-script
           ui_print("==========================================");
-          ui_print("   Full Port ROM (Android 13) for Sakura  ");
+          ui_print("   Custom Port ROM (GApps + English)      ");
           ui_print("   Smooth Parallel Anim | Blur Enabled    ");
-          ui_print("   Working Camera | Theme & Security Kept ");
+          ui_print("   Working Camera & Play Store Ready      ");
           ui_print("==========================================");
           ui_print("-> Flashing Kernel (boot.img)...");
           package_extract_file("boot.img", "/dev/block/bootdevice/by-name/boot");
@@ -360,12 +274,12 @@ jobs:
           EOF
 
           cd out
-          zip -r1 ~/Sakura_A13_Full_Port_ROM.zip boot.img vendor.img system.img META-INF/
-          ls -lh ~/Sakura_A13_Full_Port_ROM.zip
+          zip -r1 ~/Sakura_Custom_Port_ROM.zip boot.img vendor.img system.img META-INF/
+          ls -lh ~/Sakura_Custom_Port_ROM.zip
 
       - name: 8. Upload Flashable Port ROM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Sakura_A13_Full_Port_ROM
-          path: ~/Sakura_A13_Full_Port_ROM.zip
+          name: Sakura_Custom_Port_ROM
+          path: ~/Sakura_Custom_Port_ROM.zip
           retention-days: 5
