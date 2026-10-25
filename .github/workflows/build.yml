@@ -58,7 +58,7 @@ jobs:
           persist.vendor.camera.HAL3.enabled=1
           persist.camera.HAL3.enabled=1
           persist.vendor.camera.eis.enable=1
-          persist.camera.expose.aux=1
+          persist.vendor.camera.expose.aux=1
           vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,com.miui.camera
           camera.hal1.packagelist=none
           EOF
@@ -121,10 +121,10 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Aggressive Space Saving & Deep System Strip
+      - name: 6. Level-2 Ultra-Hardcore Space Saving & Strip
         run: |
           cd ~/work
-          echo "Size before aggressive space saving:"
+          echo "Size before level-2 stripping:"
           sudo du -sh rootfs/
 
           # 1. Remove Wallpapers, SuperWallpapers, AOD, Overlays, NFC, VR, XR, Print, TTS, AI models
@@ -149,8 +149,9 @@ jobs:
           sudo find rootfs/ -iname "*dolby*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*dirac*" -exec rm -rf {} + 2>/dev/null || true
 
-          # 3. Aggressive Space Saving: Remove heavy unused APEX files, fonts, ICU, cust, demos, manuals, analytics
+          # 3. Level-2 Aggressive: Remove heavy unused APEX files, carrier configs, fonts, ICU, cust, demos, manuals
           sudo find rootfs/ -name "*.apex" -not -name "*vndk*" -not -name "*runtime*" -not -name "*permission*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*carrierconfig*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*miisans*" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -iname "*cjk*" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -iname "*chinese*" -type f -delete 2>/dev/null || true
@@ -171,7 +172,7 @@ jobs:
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          echo "=== Size after aggressive space saving ==="
+          echo "=== Size after level-2 space saving ==="
           sudo du -sh rootfs/
 
           # 6. Inject Sakura Device Features XML
