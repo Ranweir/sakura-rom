@@ -49,7 +49,7 @@ jobs:
           persist.vendor.camera.HAL3.enabled=1
           persist.camera.HAL3.enabled=1
           persist.vendor.camera.eis.enable=1
-          persist.camera.expose.aux=1
+          persist.vendor.camera.expose.aux=1
           vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,com.miui.camera
           camera.hal1.packagelist=none
           EOF
@@ -64,14 +64,20 @@ jobs:
       - name: 5. Extract Xiaomi.eu payload.bin & Merge into Single System Image
         run: |
           cd ~/work
-          unzip -q port.zip payload.bin
+          unzip -q port.zip
           rm -f port.zip
+
+          PAYLOAD=$(find . -name "payload.bin" | head -n 1)
+          if [ -z "$PAYLOAD" ]; then
+            echo "Error: payload.bin not found inside port.zip!"
+            exit 1
+          fi
 
           wget -q https://github.com/ssut/payload-dumper-go/releases/download/1.2.2/payload-dumper-go_1.2.2_linux_amd64.tar.gz
           tar -xzf payload-dumper-go_1.2.2_linux_amd64.tar.gz
           mkdir -p super_ext
-          ./payload-dumper-go -o super_ext payload.bin
-          rm -f payload.bin payload-dumper-go*
+          ./payload-dumper-go -o super_ext "$PAYLOAD"
+          rm -f payload-dumper-go*
 
           dd if=/dev/zero of=out/system.img bs=1M count=3350
           mkfs.ext4 -F -L / -O ^metadata_csum,^64bit out/system.img
