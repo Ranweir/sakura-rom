@@ -121,43 +121,39 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Remove SuperWallpapers, AOD & Slim Down + Inject Camera + Sakura XML
+      - name: 6. Deep Clean & Remove All Useless Ringtones, Themes, Wallpapers & Bloat
         run: |
           cd ~/work
           SYS="rootfs/system"
           PROD="rootfs/system/product"
           SYSEXT="rootfs/system/system_ext"
 
-          echo "Size before debloat:"
+          echo "Size before deep cleaning:"
           sudo du -sh rootfs/
 
-          # Remove SuperWallpapers, AOD, bloatware, media, themes, and precompiled oat files
+          # 1. Purge all heavy media, ringtones, notification sounds, alarms, themes, wallpapers, super wallpapers, AOD
+          sudo rm -rf rootfs/system/product/media/* rootfs/product/media/* rootfs/system/media/audio/*
+          sudo rm -rf rootfs/system/media/ringtones/* rootfs/system/media/notifications/* rootfs/system/media/alarms/*
+          sudo rm -rf $PROD/media/* rootfs/product/media/*
           sudo rm -rf $PROD/app/*SuperWallpaper* $PROD/priv-app/*SuperWallpaper* $PROD/app/MIUISuperWallpaper* $PROD/priv-app/MIUISuperWallpaper*
           sudo rm -rf $PROD/app/AlwaysOnDisplay $PROD/priv-app/AlwaysOnDisplay $SYS/app/AlwaysOnDisplay $SYS/priv-app/AlwaysOnDisplay
-          sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2,Photos,Music2,Videos,Velvet,Duo,Chrome,talkback,WallpaperBackup,MiGalleryLockscreen,MiuiScanner,MiSound,VoiceAssist*,Xiaoai*,AiAsstVision*,Notes,Calculator,Weather,MiRecorder,MiCalendar,Scanner,ScreenRecorder,YellowPage,QuickApp*}
-          sudo rm -rf $PROD/priv-app/{Velvet,AndroidAutoStub,Wellbeing,HotwordEnrollment*,Turbo,MiGameCenterSDKService,MIUIAICR,MIUIMusic*,MIUIVideo*,MiBrowser*,MiShare,VoiceTrigger,SoundRecorder}
-          sudo rm -rf $PROD/data-app/*
-          sudo rm -rf $PROD/media/theme/*
-          sudo rm -rf $PROD/media/wallpaper/*
-          sudo rm -rf $PROD/media/video/*
-          sudo rm -rf $PROD/media/audio/ringtones/* $PROD/media/audio/notifications/* $PROD/media/audio/alarms/*
-          sudo rm -rf $SYS/app/{MiuiBugReport,HybridPlatform,Joyose,Mipay,MiuiVideoGlobal,MSA,AnalyticsCore,BasicDreams,PhotoTable,EasterEgg,BookmarkProvider,CatchLog,Traceur}
-          sudo rm -rf $SYS/priv-app/{BackupRestoreConfirmation,CallLogBackup,SharedStorageBackup,Tag,UserDictionaryProvider}
-          sudo rm -rf $SYSEXT/priv-app/{Turbo,GoogleFeedback}
 
-          # Remove pre-compiled oat/vdex/art files to save massive space
+          # 2. Purge non-essential bloatware & heavy system apps
+          sudo rm -rf $PROD/app/* $SYS/app/{MiuiBugReport,HybridPlatform,Joyose,Mipay,MiuiVideoGlobal,MSA,AnalyticsCore,BasicDreams,PhotoTable,EasterEgg,BookmarkProvider,CatchLog,Traceur}
+          sudo rm -rf $PROD/priv-app/* $SYS/priv-app/{BackupRestoreConfirmation,CallLogBackup,SharedStorageBackup,Tag,UserDictionaryProvider}
+          sudo rm -rf $SYSEXT/priv-app/* $PROD/data-app/*
+
+          # 3. Remove pre-compiled oat/vdex/art files to save massive space (~1.5GB)
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          echo "Size after debloat & removing SuperWallpapers/AOD:"
+          echo "Size after deep cleaning:"
           sudo du -sh rootfs/
 
-          # Inject Sakura Device Features XML
-          sudo rm -rf $SYS/etc/device_features/* $PROD/etc/device_features/*
+          # 4. Inject Sakura Device Features XML
           sudo mkdir -p $SYS/etc/device_features $PROD/etc/device_features
-
           sudo tee $SYS/etc/device_features/sakura.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <features>
@@ -192,7 +188,7 @@ jobs:
           sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
-          # Camera Permissions
+          # 5. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
           sudo tee $SYS/etc/permissions/privapp-permissions-miuicamera.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -209,7 +205,7 @@ jobs:
           </permissions>
           EOF
 
-          # Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
+          # 6. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
