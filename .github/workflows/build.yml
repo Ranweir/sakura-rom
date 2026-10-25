@@ -21,7 +21,7 @@ jobs:
           git clone https://github.com/unix3dgforce/lpunpack.git ~/lpunpack
           git clone https://github.com/vm03/payload_dumper.git ~/payload_dumper
 
-      - name: 3. Download Sakura Base ROM & Official FlymeOS 10 / Port Donor
+      - name: 3. Download Sakura Base ROM & Port Donor Zip
         run: |
           mkdir -p ~/work/{base,port_rom,rootfs,mnt_ven,mnt_sys,mnt_base_sys,out}
           cd ~/work
@@ -87,7 +87,7 @@ jobs:
           e2fsck -fy out/vendor.img || true
           resize2fs -M out/vendor.img
 
-      - name: 5. Unpack Donor ROM Zip & Merge Partitions
+      - name: 5. Unpack Donor ROM Zip & Safely Extract Partitions
         run: |
           cd ~/work
           unzip -q donor_rom.zip -d port_rom/
@@ -98,8 +98,7 @@ jobs:
             rm -f port_rom/payload.bin
           elif ls port_rom/images/super.img* >/dev/null 2>&1 || ls port_rom/super.img* >/dev/null 2>&1; then
             SUPER_CHUNKS=$(find port_rom/ -name "super.img*" | sort -V)
-            ssimgr=$([ -f /usr/bin/simg2img ] && echo "simg2img" || echo "")
-            $simg2img $SUPER_CHUNKS port_rom/super.raw.img || mv $(echo $SUPER_CHUNKS | awk '{print $1}') port_rom/super.raw.img
+            simg2img $SUPER_CHUNKS port_rom/super.raw.img || mv $(echo $SUPER_CHUNKS | awk '{print $1}') port_rom/super.raw.img
             rm -rf port_rom/images
             python3 ~/lpunpack/lpunpack.py port_rom/super.raw.img port_rom/
             rm -f port_rom/super.raw.img
@@ -120,6 +119,8 @@ jobs:
               if file "$IMG" | grep -qi "sparse"; then
                 simg2img "$IMG" "${IMG}.raw" && mv "${IMG}.raw" "$IMG"
               fi
+              # Fix Structure needs cleaning error by running e2fsck before mounting
+              e2fsck -fy "$IMG" || true
               if sudo mount -o loop,ro "$IMG" mnt_sys 2>/dev/null; then
                 sudo cp -rfp mnt_sys/* ~/work/ext_${part}/
                 sudo umount mnt_sys
@@ -150,24 +151,20 @@ jobs:
 
           SYS="rootfs/system"
 
-          # Remove OAT/VDEX/ODEX
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          # Target Chinese Apps, AI models, Flyme/Chinese Keyboards, Bloatware (Protecting GApps: GmsCore, Phonesky)
           for bloat in Aicy VoiceAssistant MeizuPay WalletMz Browser Video MzUpdate Life Reader GameCenter Pedometer FamilyGuard Mall Community Feedback BugReport Suggestion SuperWallpaper AlwaysOnDisplay NFC VR XR TTS Speech MiCloudSync FindDevice XiaomiAccount Analytics SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MIUIVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg CatchLog Traceur PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence ManagedProvisioning AppVault MeizuKeyboard Keyboard InputMethodBaidu Sogou Xunfei miai aivision ocr; do
             sudo find rootfs/ -iname "*${bloat}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
-          # Inject Default Camera
           sudo mkdir -p $SYS/app $SYS/priv-app $SYS/etc/permissions $SYS/etc/device_features $SYS/product/etc/device_features
           [ -d ~/work/saved_cam/app ] && sudo cp -rfp ~/work/saved_cam/app/* $SYS/app/ 2>/dev/null || true
           [ -d ~/work/saved_cam/priv-app ] && sudo cp -rfp ~/work/saved_cam/priv-app/* $SYS/priv-app/ 2>/dev/null || true
           [ -d ~/work/saved_cam/etc ] && sudo cp -rfp ~/work/saved_cam/etc/* $SYS/etc/permissions/ 2>/dev/null || true
 
-          # Sakura Device Features
           sudo tee $SYS/etc/device_features/sakura.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <features>
@@ -185,7 +182,6 @@ jobs:
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/product/etc/device_features/spes.xml
 
-          # Set English (en-US) Default Language & Parallel Animations Build.prop Tweaks
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
