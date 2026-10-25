@@ -121,48 +121,25 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Permanent Clean & Safe Audio Trim
+      - name: 6. Remove Wallpapers & Clean Bloat (Keeping Original Ringtones)
         run: |
           cd ~/work
           echo "Size before cleaning:"
           sudo du -sh rootfs/
 
-          # 1. Remove wallpapers, super wallpapers, AOD, themes, overlays safely
+          # 1. Remove all system wallpapers, super wallpapers, AOD, themes, overlays safely
           sudo find rootfs/ -iname "*superwallpaper*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*alwaysondisplay*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*wallpaper*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*theme*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*overlay*" -type d -exec rm -rf {} + 2>/dev/null || true
 
-          # 2. Extract single default ringtone and notification tone safely without directory collision
-          sudo mkdir -p ~/work/saved_audio
-          RING=$(sudo find rootfs/ -type f \( -iname "*ringtone*.ogg" -o -iname "*ringtone*.mp3" \) -print -quit 2>/dev/null || true)
-          if [ -n "$RING" ] && [ -f "$RING" ]; then
-            sudo cp "$RING" ~/work/saved_audio/default_ring.ogg 2>/dev/null || true
-          fi
-          NOTIF=$(sudo find rootfs/ -type f \( -iname "*notification*.ogg" -o -iname "*notification*.mp3" \) -print -quit 2>/dev/null || true)
-          if [ -n "$NOTIF" ] && [ -f "$NOTIF" ]; then
-            sudo cp "$NOTIF" ~/work/saved_audio/default_notif.ogg 2>/dev/null || true
-          fi
-
-          # Clear old media/audio files safely and place default tones
-          sudo find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" -o -name "*.wav" \) -delete 2>/dev/null || true
-          sudo mkdir -p rootfs/system/media/audio/ringtones rootfs/system/media/audio/notifications rootfs/product/media/audio/ringtones
-
-          if [ -f ~/work/saved_audio/default_ring.ogg ]; then
-            sudo cp ~/work/saved_audio/default_ring.ogg rootfs/system/media/audio/ringtones/MiRemix.ogg
-            sudo cp ~/work/saved_audio/default_ring.ogg rootfs/product/media/audio/ringtones/Ring.ogg
-          fi
-          if [ -f ~/work/saved_audio/default_notif.ogg ]; then
-            sudo cp ~/work/saved_audio/default_notif.ogg rootfs/system/media/audio/notifications/Default.ogg
-          fi
-
-          # 3. Universally remove non-essential bloatware apps by name across rootfs
+          # 2. Universally remove non-essential bloatware apps by name across rootfs
           for app in MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback Notes Calculator Weather MiRecorder MiCalendar Scanner ScreenRecorder YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence; do
             sudo find rootfs/ -iname "*${app}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
-          # 4. Remove pre-compiled oat/vdex/art files to save massive space
+          # 3. Remove pre-compiled oat/vdex/art files to save massive space
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
@@ -171,7 +148,7 @@ jobs:
           echo "Size after cleaning:"
           sudo du -sh rootfs/
 
-          # 5. Inject Sakura Device Features XML
+          # 4. Inject Sakura Device Features XML
           SYS="rootfs/system"
           PROD="rootfs/system/product"
           sudo mkdir -p $SYS/etc/device_features $PROD/etc/device_features
@@ -206,10 +183,10 @@ jobs:
           sudo cp $SYS/etc/device_features/sakura.xml $PROD/etc/device_features/sakura.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
-          sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
-          sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
+          sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
+          sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
 
-          # 6. Camera Permissions
+          # 5. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
           sudo tee $SYS/etc/permissions/privapp-permissions-miuicamera.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -226,7 +203,7 @@ jobs:
           </permissions>
           EOF
 
-          # 7. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
+          # 6. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
