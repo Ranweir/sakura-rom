@@ -58,7 +58,7 @@ jobs:
           persist.vendor.camera.HAL3.enabled=1
           persist.camera.HAL3.enabled=1
           persist.vendor.camera.eis.enable=1
-          persist.vendor.camera.expose.aux=1
+          persist.camera.expose.aux=1
           vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,com.miui.camera
           camera.hal1.packagelist=none
           EOF
@@ -121,34 +121,49 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Remove Wallpapers, Re-installable Apps & Bloat
+      - name: 6. Strip 5 Heavy Points (Fonts, Overlays, Cust, Demos, Speech) & Bloat
         run: |
           cd ~/work
-          echo "Size before cleaning:"
+          echo "Size before extreme cleaning:"
           sudo du -sh rootfs/
 
-          # 1. Remove all system wallpapers, super wallpapers, AOD, themes, overlays safely
+          # 1. Remove Wallpapers, SuperWallpapers, AOD, Themes, Overlays
           sudo find rootfs/ -iname "*superwallpaper*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*alwaysondisplay*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*wallpaper*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*theme*" -type d -exec rm -rf {} + 2>/dev/null || true
-          sudo find rootfs/ -iname "*overlay*" -type d -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*nfc*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*vr*" -type d -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*xr*" -type d -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*print*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*tts*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*speech*" -exec rm -rf {} + 2>/dev/null || true
 
-          # 2. Remove re-installable system apps (Gallery, Notes, Calculator, GetApps, Weather, Music, Video, Scanner, etc.)
-          for app in Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence Notes; do
+          # 2. Target the 5 Specific Points: Heavy Fonts, Overlays, Cust, Demos/Manuals, ICU data
+          sudo find rootfs/ -iname "*miisans*" -type f -delete 2>/dev/null || true
+          sudo find rootfs/ -iname "*cjk*" -type f -delete 2>/dev/null || true
+          sudo find rootfs/ -iname "*chinese*" -type f -delete 2>/dev/null || true
+          sudo find rootfs/ -iname "*icu*" -type f -delete 2>/dev/null || true
+          sudo find rootfs/ -iname "*manual*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*demo*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*safety*" -exec rm -rf {} + 2>/dev/null || true
+          sudo rm -rf rootfs/system/cust rootfs/product/cust rootfs/system/mi_ext/cust 2>/dev/null || true
+
+          # 3. Remove re-installable & non-essential apps
+          for app in Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence; do
             sudo find rootfs/ -iname "*${app}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
-          # 3. Remove pre-compiled oat/vdex/art files to save massive space
+          # 4. Remove pre-compiled oat/vdex/art files to save massive space (~1.5GB)
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          echo "Size after cleaning:"
+          echo "Size after extreme cleaning:"
           sudo du -sh rootfs/
 
-          # 4. Inject Sakura Device Features XML
+          # 5. Inject Sakura Device Features XML
           SYS="rootfs/system"
           PROD="rootfs/system/product"
           sudo mkdir -p $SYS/etc/device_features $PROD/etc/device_features
@@ -183,10 +198,10 @@ jobs:
           sudo cp $SYS/etc/device_features/sakura.xml $PROD/etc/device_features/sakura.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
-          sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
-          sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
+          sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
+          sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
 
-          # 5. Camera Permissions
+          # 6. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
           sudo tee $SYS/etc/permissions/privapp-permissions-miuicamera.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -203,7 +218,7 @@ jobs:
           </permissions>
           EOF
 
-          # 6. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
+          # 7. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
