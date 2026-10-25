@@ -18,7 +18,6 @@ jobs:
             android-sdk-libsparse-utils e2fsprogs erofs-utils curl git wget file
           git clone https://github.com/xpirt/sdat2img.git ~/sdat2img
           git clone https://github.com/unix3dgforce/lpunpack.git ~/lpunpack
-          # Download prebuilt official C++ lpunpack binary for 100% compatibility
           wget -q https://github.com/erfanoabdi/ErfanGSIs/raw/master/tools/lpunpack -O ~/lpunpack_bin || true
           chmod +x ~/lpunpack_bin || true
 
@@ -37,7 +36,6 @@ jobs:
           unzip -q base.zip -d base/
           cp base/boot.img out/boot.img
 
-          # Save working update-binary directly from Sakura Base ROM
           mkdir -p out/META-INF/com/google/android
           if [ -f base/META-INF/com/google/android/update-binary ]; then
             cp base/META-INF/com/google/android/update-binary out/META-INF/com/google/android/update-binary
@@ -72,91 +70,32 @@ jobs:
           e2fsck -fy out/vendor.img || true
           resize2fs -M out/vendor.img
 
-      - name: 5. Bulletproof Unpack Xiaomi.eu & Merge into Single System Image
+      - name: 5. Merge Split super.img.0-N Chunks & Unpack Xiaomi.eu System
         run: |
           cd ~/work
-          unzip -q port.zip -d eu_port/
+          unzip -q port.zip "images/super.img*" -d eu_port/ || unzip -q port.zip -d eu_port/
           rm -f port.zip
           mkdir -p super_ext
 
-          echo "=== Checking Port ROM Structure ==="
-          find eu_port/ -maxdepth 3
+          echo "=== Joining Split Sparse super.img.* Chunks in Numerical Order ==="
+          SUPER_CHUNKS=$(find eu_port/ -name "super.img*" | sort -V)
+          echo "Found chunks:"
+          echo "$SUPER_CHUNKS"
 
-          # Method 1: Check for payload.bin
-          PAYLOAD=$(find eu_port/ -name "payload.bin" | head -n 1)
-          if [ -n "$PAYLOAD" ]; then
-            echo "-> Found payload.bin, extracting..."
-            wget -q https://github.com/ssut/payload-dumper-go/releases/download/1.2.2/payload-dumper-go_1.2.2_linux_amd64.tar.gz
-            tar -xzf payload-dumper-go_1.2.2_linux_amd64.tar.gz
-            ./payload-dumper-go -o super_ext "$PAYLOAD"
-            rm -f payload-dumper-go*
-          fi
+          # Join all split sparse chunks (super.img.0, super.img.1, ...) into a single raw super.img
+          simg2img $SUPER_CHUNKS eu_port/super.raw.img
+          rm -rf eu_port/images
 
-          # Method 2: Check for direct .new.dat.br partitions (system, product, etc.)
-          if [ -f eu_port/system.new.dat.br ] || [ -f eu_port/images/system.new.dat.br ]; then
-            echo "-> Found .new.dat.br partitions, converting..."
-            for part in system product system_ext mi_ext; do
-              BR_FILE=$(find eu_port/ -name "${part}.new.dat.br" | head -n 1)
-              TR_FILE=$(find eu_port/ -name "${part}.transfer.list" | head -n 1)
-              if [ -n "$BR_FILE" ]; then
-                brotli -d "$BR_FILE" -o "eu_port/${part}.new.dat"
-                python3 ~/sdat2img/sdat2img.py "$TR_FILE" "eu_port/${part}.new.dat" "super_ext/${part}.img"
-                rm -f "eu_port/${part}.new.dat" "$BR_FILE"
-              fi
-            done
-          fi
+          ls -lh eu_port/super.raw.img
 
-          # Method 3: Check for super.img (Raw, Sparse, Brotli, Zstd, or Split)
-          SUPER_FILE=$(find eu_port/ -name "super.img*" | head -n 1)
-          if [ -n "$SUPER_FILE" ] && [ -z "$(ls -A super_ext)" ]; then
-            echo "-> Found $SUPER_FILE, detecting compression type..."
-            FILE_INFO=$(file -b "$SUPER_FILE")
-            echo "File type: $FILE_INFO"
+          echo "=== Unpacking Logical Partitions from Joined super.raw.img ==="
+          python3 ~/lpunpack/lpunpack.py eu_port/super.raw.img super_ext/ || ~/lpunpack_bin eu_port/super.raw.img super_ext/
+          rm -f eu_port/super.raw.img
 
-            if [[ "$SUPER_FILE" == *.br ]] || echo "$FILE_INFO" | grep -qi "brotli"; then
-              echo "Decompressing Brotli super.img..."
-              brotli -d "$SUPER_FILE" -o eu_port/super.decompressed.img
-              SUPER_FILE="eu_port/super.decompressed.img"
-              FILE_INFO=$(file -b "$SUPER_FILE")
-            fi
-
-            if [[ "$SUPER_FILE" == *.zst ]] || echo "$FILE_INFO" | grep -qi "Zstandard"; then
-              echo "Decompressing Zstd super.img..."
-              zstd -d "$SUPER_FILE" -o eu_port/super.decompressed.img
-              SUPER_FILE="eu_port/super.decompressed.img"
-              FILE_INFO=$(file -b "$SUPER_FILE")
-            fi
-
-            echo "Converting sparse/raw super image..."
-            if echo "$FILE_INFO" | grep -qi "sparse"; then
-              simg2img "$SUPER_FILE" eu_port/super.raw.img
-              rm -f "$SUPER_FILE"
-            else
-              mv "$SUPER_FILE" eu_port/super.raw.img
-            fi
-
-            echo "Unpacking logical partitions from super.raw.img..."
-            ~/lpunpack_bin eu_port/super.raw.img super_ext/ || \
-            python3 ~/lpunpack/lpunpack.py eu_port/super.raw.img super_ext/ || \
-            7z x eu_port/super.raw.img -osuper_ext/
-            rm -f eu_port/super.raw.img
-          fi
-
-          # Method 4: Check if system.img / product.img already exist directly inside eu_port/images/
-          if [ -z "$(ls -A super_ext)" ]; then
-            for part in system product system_ext mi_ext; do
-              DIRECT_IMG=$(find eu_port/ -name "${part}.img*" | head -n 1)
-              if [ -n "$DIRECT_IMG" ]; then
-                mv "$DIRECT_IMG" "super_ext/${part}.img"
-              fi
-            done
-          fi
-
-          rm -rf eu_port
           echo "=== Extracted Partitions inside super_ext ==="
           ls -lh super_ext/
 
-          # Create a large 6000MB temporary system.img so merging NEVER runs out of space
+          # Create a 6000MB temporary system.img so merging never runs out of space
           dd if=/dev/zero of=out/system.img bs=1M count=6000
           mkfs.ext4 -F -L / -O ^metadata_csum,^64bit out/system.img
           sudo mount -o loop,rw out/system.img mnt_sys
@@ -166,11 +105,6 @@ jobs:
             if [ -n "$IMG" ] && [ -s "$IMG" ]; then
               echo "Extracting partition: $part ($IMG)"
               mkdir -p ~/work/extracted_${part}
-              # Convert if sparse
-              if file -b "$IMG" | grep -qi "sparse"; then
-                simg2img "$IMG" "${IMG}.raw"
-                mv "${IMG}.raw" "$IMG"
-              fi
               if sudo mount -o loop,ro "$IMG" ~/work/mnt_ext_sys 2>/dev/null; then
                 sudo cp -rfp ~/work/mnt_ext_sys/* ~/work/extracted_${part}/
                 sudo umount ~/work/mnt_ext_sys
@@ -187,7 +121,7 @@ jobs:
             exit 1
           fi
 
-          echo "Merging partitions into non-dynamic Sakura system.img..."
+          echo "=== Merging Partitions into Non-Dynamic Sakura system.img ==="
           sudo cp -rfp ~/work/extracted_system/* mnt_sys/
           sudo rm -rf mnt_sys/product mnt_sys/system/product mnt_sys/system_ext mnt_sys/system/system_ext
           sudo mkdir -p mnt_sys/system/product mnt_sys/system/system_ext
@@ -215,7 +149,7 @@ jobs:
           SYS="mnt_sys/system"
           PROD="mnt_sys/system/product"
 
-          # Heavy Debloat so final system.img fits easily inside Sakura's 3GB partition
+          # Heavy Debloat so final system.img fits inside Sakura's 3GB partition
           sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2,Photos,Music2,Videos,Velvet,Duo,Chrome,talkback}
           sudo rm -rf $PROD/priv-app/{Velvet,AndroidAutoStub,Wellbeing,HotwordEnrollmentOKGoogleHEXAGON,HotwordEnrollmentXGoogleHEXAGON}
           sudo rm -rf $PROD/data-app/*
