@@ -58,7 +58,7 @@ jobs:
           persist.vendor.camera.HAL3.enabled=1
           persist.camera.HAL3.enabled=1
           persist.vendor.camera.eis.enable=1
-          persist.vendor.camera.expose.aux=1
+          persist.camera.expose.aux=1
           vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,com.miui.camera
           camera.hal1.packagelist=none
           EOF
@@ -121,7 +121,7 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Trim Size to <2.7GB + Inject Camera + Parallel Animations + Sakura XML
+      - name: 6. Remove SuperWallpapers, AOD & Slim Down + Inject Camera + Sakura XML
         run: |
           cd ~/work
           SYS="rootfs/system"
@@ -131,27 +131,30 @@ jobs:
           echo "Size before debloat:"
           sudo du -sh rootfs/
 
-          # 1. Remove heavy bloatware, preloaded media, SuperWallpapers & oat files to fit inside Sakura's 3.0GB partition
-          sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2,Photos,Music2,Videos,Velvet,Duo,Chrome,talkback,MIUISuperWallpaper*,SuperWallpaper*,WallpaperBackup,MiGalleryLockscreen,MiuiScanner,MiSound,VoiceAssist*,Xiaoai*,AiAsstVision*}
-          sudo rm -rf $PROD/priv-app/{Velvet,AndroidAutoStub,Wellbeing,HotwordEnrollment*,Turbo,MiGameCenterSDKService,MIUIAICR,MIUIMusic*,MIUIVideo*,MiBrowser*,MiShare}
+          # Remove SuperWallpapers, AOD, bloatware, media, themes, and precompiled oat files
+          sudo rm -rf $PROD/app/*SuperWallpaper* $PROD/priv-app/*SuperWallpaper* $PROD/app/MIUISuperWallpaper* $PROD/priv-app/MIUISuperWallpaper*
+          sudo rm -rf $PROD/app/AlwaysOnDisplay $PROD/priv-app/AlwaysOnDisplay $SYS/app/AlwaysOnDisplay $SYS/priv-app/AlwaysOnDisplay
+          sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2,Photos,Music2,Videos,Velvet,Duo,Chrome,talkback,WallpaperBackup,MiGalleryLockscreen,MiuiScanner,MiSound,VoiceAssist*,Xiaoai*,AiAsstVision*,Notes,Calculator,Weather,MiRecorder,MiCalendar,Scanner,ScreenRecorder,YellowPage,QuickApp*}
+          sudo rm -rf $PROD/priv-app/{Velvet,AndroidAutoStub,Wellbeing,HotwordEnrollment*,Turbo,MiGameCenterSDKService,MIUIAICR,MIUIMusic*,MIUIVideo*,MiBrowser*,MiShare,VoiceTrigger,SoundRecorder}
           sudo rm -rf $PROD/data-app/*
-          sudo rm -rf $PROD/media/theme/miui_mod_icons/*
+          sudo rm -rf $PROD/media/theme/*
           sudo rm -rf $PROD/media/wallpaper/*
           sudo rm -rf $PROD/media/video/*
+          sudo rm -rf $PROD/media/audio/ringtones/* $PROD/media/audio/notifications/* $PROD/media/audio/alarms/*
           sudo rm -rf $SYS/app/{MiuiBugReport,HybridPlatform,Joyose,Mipay,MiuiVideoGlobal,MSA,AnalyticsCore,BasicDreams,PhotoTable,EasterEgg,BookmarkProvider,CatchLog,Traceur}
           sudo rm -rf $SYS/priv-app/{BackupRestoreConfirmation,CallLogBackup,SharedStorageBackup,Tag,UserDictionaryProvider}
           sudo rm -rf $SYSEXT/priv-app/{Turbo,GoogleFeedback}
 
-          # Remove pre-compiled oat/vdex/art files (Android regenerates them on first boot, saves ~1.2GB)
+          # Remove pre-compiled oat/vdex/art files to save massive space
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          echo "Size after debloat & oat cleanup:"
+          echo "Size after debloat & removing SuperWallpapers/AOD:"
           sudo du -sh rootfs/
 
-          # 2. Inject Sakura Device Features XML
+          # Inject Sakura Device Features XML
           sudo rm -rf $SYS/etc/device_features/* $PROD/etc/device_features/*
           sudo mkdir -p $SYS/etc/device_features $PROD/etc/device_features
 
@@ -189,7 +192,7 @@ jobs:
           sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
-          # 3. Camera Permissions
+          # Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
           sudo tee $SYS/etc/permissions/privapp-permissions-miuicamera.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -206,7 +209,7 @@ jobs:
           </permissions>
           EOF
 
-          # 4. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
+          # Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
@@ -226,23 +229,14 @@ jobs:
           persist.sys.miui.sf_cores=4-7
           EOF
 
-      - name: 7. Build Exact <2.9GB System Image & Package Flashable Zip
+      - name: 7. Build Exact <2.6GB System Image & Package Flashable Zip
         run: |
           cd ~/work
           USED_MB=$(sudo du -sm rootfs | cut -f1)
-          IMG_MB=$((USED_MB + 180))
+          IMG_MB=$((USED_MB + 200))
 
-          # If still slightly over 2950MB, trim non-essential TTS/font/media files automatically
-          if [ "$IMG_MB" -gt 2950 ]; then
-            echo "Trimming extra media/fonts to fit strictly under 2950MB..."
-            sudo rm -rf rootfs/system/product/app/{talkback,GoogleTTS,MarkupGoogle} || true
-            sudo rm -rf rootfs/system/app/{PrintSpooler,BuiltInPrintService} || true
-            USED_MB=$(sudo du -sm rootfs | cut -f1)
-            IMG_MB=$((USED_MB + 150))
-          fi
-
-          if [ "$IMG_MB" -gt 2980 ]; then
-            IMG_MB=2980
+          if [ "$IMG_MB" -gt 2750 ]; then
+            IMG_MB=2750
           fi
 
           echo "=== Final Used Space: ${USED_MB}MB | Creating system.img of ${IMG_MB}MB ==="
