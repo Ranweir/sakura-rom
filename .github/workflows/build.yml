@@ -23,8 +23,8 @@ jobs:
         run: |
           mkdir -p ~/work/{base,eu_port,super_ext,mnt_sys,mnt_ven,mnt_ext_sys,mnt_prod,mnt_ext,mnt_mi,out}
           cd ~/work
-          echo "Downloading Sakura A13 Base ROM..."
-          aria2c -x16 -s16 -k1M -o base.zip "https://downloads.sourceforge.net/project/aosp-kulo/CherishOS/Cherish-OS-v4.12-20230918-0922-sakura-UNOFFICIAL-GApps.zip"
+          echo "Downloading Sakura A13 Base ROM (LineageOS 20)..."
+          aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20231012/lineage-20.0-20231012-UNOFFICIAL-sakura.zip"
           echo "Downloading Xiaomi.eu MIUI 14 (spes) Port ROM..."
           aria2c -x16 -s16 -k1M -o port.zip "https://downloads.sourceforge.net/project/xiaomi-eu-multilang-miui-roms/xiaomi.eu/MIUI-STABLE-RELEASES/MIUIv14/xiaomi.eu_multi_HMNote11_V14.0.6.0.TGKMIXM_v14-13.zip"
 
