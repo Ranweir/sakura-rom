@@ -21,20 +21,19 @@ jobs:
           git clone https://github.com/unix3dgforce/lpunpack.git ~/lpunpack
           git clone https://github.com/vm03/payload_dumper.git ~/payload_dumper
 
-      - name: 3. Download Sakura Android 15 Base ROM & OxygenOS 15 Donor
+      - name: 3. Download Sakura Base ROM & OxygenOS 15 Donor
         run: |
           mkdir -p ~/work/{base,port_rom,rootfs,mnt_ven,mnt_sys,out}
           cd ~/work
 
-          echo "Downloading Sakura Android 15 Base ROM (LineageOS A15)..."
-          aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20250420/lineage-22.0-20250420-UNOFFICIAL-sakura.zip" || \
-          aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20250420/lineage-22-20250420-UNOFFICIAL-sakura.zip" || true
+          echo "Downloading Sakura Base ROM..."
+          aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20231012/lineage-20.0-20231012-UNOFFICIAL-sakura.zip"
 
           echo "Downloading OxygenOS 15 (Android 15) Port Donor Zip..."
           aria2c -x16 -s16 -k1M -o donor_rom.zip "https://downloads.sourceforge.net/project/xiaomi-eu-multilang-miui-roms/xiaomi.eu/MIUI-STABLE-RELEASES/MIUIv14/xiaomi.eu_multi_HMNote11_V14.0.6.0.TGKMIXM_v14-13.zip"
           ls -lh base.zip donor_rom.zip
 
-      - name: 4. Extract Sakura A15 Base (boot.img, vendor.img) & Patch Vendor
+      - name: 4. Extract Sakura Base (boot.img, vendor.img) & Patch Vendor
         run: |
           cd ~/work
           unzip -q base.zip -d base/
@@ -128,20 +127,17 @@ jobs:
 
           SYS="rootfs/system"
 
-          # Remove OAT/VDEX/ODEX
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          # Aggressively Wipe Camera, AOD, AI Features, Wallpapers, Ringtones & Bloatware
           for bloat in Camera Aperture Snap Camcorder AOD AlwaysOnDisplay miai aivision ocr ai Assistant VoiceAssistant MeizuPay WalletMz Browser Video MzUpdate Life Reader GameCenter Pedometer FamilyGuard Mall Community Feedback BugReport Suggestion SuperWallpaper NFC VR XR TTS Speech MiCloudSync FindDevice XiaomiAccount Analytics SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MIUIVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg CatchLog Traceur PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence ManagedProvisioning AppVault; do
             sudo find rootfs/ -iname "*${bloat}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
           sudo rm -rf rootfs/system/media/audio/ringtones/* rootfs/system/media/audio/alarms/* 2>/dev/null || true
 
-          # Sakura Device Configs
           sudo mkdir -p $SYS/etc/device_features $SYS/product/etc/device_features
           sudo tee $SYS/etc/device_features/sakura.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -155,19 +151,17 @@ jobs:
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/product/etc/device_features/spes.xml
 
-          # English Locale + OxygenOS Parallel Animations & Blur Build.prop Tweaks
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
 
-          # --- Ultra-Clean OxygenOS 15 Port & Parallel Animations ---
+          # --- Ultra-Clean Port & Parallel Animations ---
           ro.product.locale=en-US
           persist.sys.locale=en-US
           ro.product.system.device=sakura
           ro.product.system.model=Redmi 6 Pro
           ro.miui.notch=1
 
-          # Fluid Parallel Animations & Gaussian Blur Configuration
           ro.surface_flinger.supports_background_blur=1
           persist.sys.background_blur_supported=true
           persist.sys.background_blur_status_default=true
@@ -211,9 +205,8 @@ jobs:
 
           cat << 'EOF' > out/META-INF/com/google/android/updater-script
           ui_print("==========================================");
-          ui_print("   OxygenOS 15 Ultra-Clean Port (A15)     ");
+          ui_print("   Custom Port ROM (Ultra-Clean)          ");
           ui_print("   Parallel Animations & Blur Enabled     ");
-          ui_print("   Camera & Bloatware Removed (Max Space) ");
           ui_print("==========================================");
           ui_print("-> Flashing Kernel (boot.img)...");
           package_extract_file("boot.img", "/dev/block/bootdevice/by-name/boot");
@@ -225,12 +218,12 @@ jobs:
           EOF
 
           cd out
-          zip -r1 ~/OxygenOS15_UltraClean_Sakura.zip boot.img vendor.img system.img META-INF/
-          ls -lh ~/OxygenOS15_UltraClean_Sakura.zip
+          zip -r1 ~/Sakura_UltraClean_Port.zip boot.img vendor.img system.img META-INF/
+          ls -lh ~/Sakura_UltraClean_Port.zip
 
       - name: 8. Upload Flashable Port ROM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OxygenOS15_UltraClean_Sakura
-          path: ~/OxygenOS15_UltraClean_Sakura.zip
+          name: Sakura_UltraClean_Port
+          path: ~/Sakura_UltraClean_Port.zip
           retention-days: 5
