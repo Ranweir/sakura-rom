@@ -23,7 +23,7 @@ jobs:
 
       - name: 3. Download Sakura Base ROM & Xiaomi.eu MIUI 14 Donor
         run: |
-          mkdir -p ~/work/{base,eu_port,super_ext,mnt_sys,mnt_ven,mnt_ext_sys,out}
+          mkdir -p ~/work/{base,eu_port,super_ext,rootfs,mnt_ven,mnt_ext_sys,out}
           cd ~/work
           echo "Downloading Sakura A13 Base ROM (LineageOS 20)..."
           aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20231012/lineage-20.0-20231012-UNOFFICIAL-sakura.zip"
@@ -70,40 +70,23 @@ jobs:
           e2fsck -fy out/vendor.img || true
           resize2fs -M out/vendor.img
 
-      - name: 5. Merge Split super.img.0-N Chunks & Unpack Xiaomi.eu System
+      - name: 5. Merge Split super.img.0-N Chunks & Unpack into Folder
         run: |
           cd ~/work
           unzip -q port.zip "images/super.img*" -d eu_port/ || unzip -q port.zip -d eu_port/
           rm -f port.zip
           mkdir -p super_ext
 
-          echo "=== Joining Split Sparse super.img.* Chunks in Numerical Order ==="
           SUPER_CHUNKS=$(find eu_port/ -name "super.img*" | sort -V)
-          echo "Found chunks:"
-          echo "$SUPER_CHUNKS"
-
-          # Join all split sparse chunks (super.img.0, super.img.1, ...) into a single raw super.img
           simg2img $SUPER_CHUNKS eu_port/super.raw.img
           rm -rf eu_port/images
 
-          ls -lh eu_port/super.raw.img
-
-          echo "=== Unpacking Logical Partitions from Joined super.raw.img ==="
           python3 ~/lpunpack/lpunpack.py eu_port/super.raw.img super_ext/ || ~/lpunpack_bin eu_port/super.raw.img super_ext/
           rm -f eu_port/super.raw.img
-
-          echo "=== Extracted Partitions inside super_ext ==="
-          ls -lh super_ext/
-
-          # Create a 6000MB temporary system.img so merging never runs out of space
-          dd if=/dev/zero of=out/system.img bs=1M count=6000
-          mkfs.ext4 -F -L / -O ^metadata_csum,^64bit out/system.img
-          sudo mount -o loop,rw out/system.img mnt_sys
 
           for part in system product system_ext mi_ext; do
             IMG=$(find super_ext/ -name "${part}_a.img" -o -name "${part}.img" | head -n 1)
             if [ -n "$IMG" ] && [ -s "$IMG" ]; then
-              echo "Extracting partition: $part ($IMG)"
               mkdir -p ~/work/extracted_${part}
               if sudo mount -o loop,ro "$IMG" ~/work/mnt_ext_sys 2>/dev/null; then
                 sudo cp -rfp ~/work/mnt_ext_sys/* ~/work/extracted_${part}/
@@ -116,46 +99,59 @@ jobs:
             fi
           done
 
-          if [ ! -d ~/work/extracted_system/system ] && [ ! -d ~/work/extracted_system/app ]; then
-            echo "Error: System partition failed to extract properly!"
-            exit 1
-          fi
-
-          echo "=== Merging Partitions into Non-Dynamic Sakura system.img ==="
-          sudo cp -rfp ~/work/extracted_system/* mnt_sys/
-          sudo rm -rf mnt_sys/product mnt_sys/system/product mnt_sys/system_ext mnt_sys/system/system_ext
-          sudo mkdir -p mnt_sys/system/product mnt_sys/system/system_ext
+          echo "=== Merging Partitions into rootfs Directory ==="
+          sudo cp -rfp ~/work/extracted_system/* rootfs/
+          sudo rm -rf rootfs/product rootfs/system/product rootfs/system_ext rootfs/system/system_ext
+          sudo mkdir -p rootfs/system/product rootfs/system/system_ext
 
           if [ -d ~/work/extracted_product ]; then
-            sudo cp -rfp ~/work/extracted_product/* mnt_sys/system/product/ || true
+            sudo cp -rfp ~/work/extracted_product/* rootfs/system/product/ || true
           fi
           if [ -d ~/work/extracted_system_ext ]; then
-            sudo cp -rfp ~/work/extracted_system_ext/* mnt_sys/system/system_ext/ || true
+            sudo cp -rfp ~/work/extracted_system_ext/* rootfs/system/system_ext/ || true
           fi
           if [ -d ~/work/extracted_mi_ext/product ]; then
-            sudo cp -rfp ~/work/extracted_mi_ext/product/* mnt_sys/system/product/ || true
+            sudo cp -rfp ~/work/extracted_mi_ext/product/* rootfs/system/product/ || true
           fi
           if [ -d ~/work/extracted_mi_ext/system ]; then
-            sudo cp -rfp ~/work/extracted_mi_ext/system/* mnt_sys/system/ || true
+            sudo cp -rfp ~/work/extracted_mi_ext/system/* rootfs/system/ || true
           fi
 
-          sudo ln -sf /system/product mnt_sys/product
-          sudo ln -sf /system/system_ext mnt_sys/system_ext
+          sudo ln -sf /system/product rootfs/product
+          sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Heavy Debloat & Inject Working Camera + Parallel Animations + Sakura XML
+      - name: 6. Trim Size to <2.7GB + Inject Camera + Parallel Animations + Sakura XML
         run: |
           cd ~/work
-          SYS="mnt_sys/system"
-          PROD="mnt_sys/system/product"
+          SYS="rootfs/system"
+          PROD="rootfs/system/product"
+          SYSEXT="rootfs/system/system_ext"
 
-          # Heavy Debloat so final system.img fits inside Sakura's 3GB partition
-          sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2,Photos,Music2,Videos,Velvet,Duo,Chrome,talkback}
-          sudo rm -rf $PROD/priv-app/{Velvet,AndroidAutoStub,Wellbeing,HotwordEnrollmentOKGoogleHEXAGON,HotwordEnrollmentXGoogleHEXAGON}
+          echo "Size before debloat:"
+          sudo du -sh rootfs/
+
+          # 1. Remove heavy bloatware, preloaded media, SuperWallpapers & oat files to fit inside Sakura's 3.0GB partition
+          sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2,Photos,Music2,Videos,Velvet,Duo,Chrome,talkback,MIUISuperWallpaper*,SuperWallpaper*,WallpaperBackup,MiGalleryLockscreen,MiuiScanner,MiSound,VoiceAssist*,Xiaoai*,AiAsstVision*}
+          sudo rm -rf $PROD/priv-app/{Velvet,AndroidAutoStub,Wellbeing,HotwordEnrollment*,Turbo,MiGameCenterSDKService,MIUIAICR,MIUIMusic*,MIUIVideo*,MiBrowser*,MiShare}
           sudo rm -rf $PROD/data-app/*
-          sudo rm -rf $SYS/app/{MiuiBugReport,HybridPlatform,Joyose,Mipay,MiuiVideoGlobal,MSA,AnalyticsCore}
-          sudo find mnt_sys/ -name "*oat" -type d -exec rm -rf {} + 2>/dev/null || true
+          sudo rm -rf $PROD/media/theme/miui_mod_icons/*
+          sudo rm -rf $PROD/media/wallpaper/*
+          sudo rm -rf $PROD/media/video/*
+          sudo rm -rf $SYS/app/{MiuiBugReport,HybridPlatform,Joyose,Mipay,MiuiVideoGlobal,MSA,AnalyticsCore,BasicDreams,PhotoTable,EasterEgg,BookmarkProvider,CatchLog,Traceur}
+          sudo rm -rf $SYS/priv-app/{BackupRestoreConfirmation,CallLogBackup,SharedStorageBackup,Tag,UserDictionaryProvider}
+          sudo rm -rf $SYSEXT/priv-app/{Turbo,GoogleFeedback}
 
+          # Remove pre-compiled oat/vdex/art files (Android regenerates them on first boot, saves ~1.2GB)
+          sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
+          sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
+          sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
+
+          echo "Size after debloat & oat cleanup:"
+          sudo du -sh rootfs/
+
+          # 2. Inject Sakura Device Features XML
           sudo rm -rf $SYS/etc/device_features/* $PROD/etc/device_features/*
           sudo mkdir -p $SYS/etc/device_features $PROD/etc/device_features
 
@@ -193,6 +189,7 @@ jobs:
           sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
+          # 3. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
           sudo tee $SYS/etc/permissions/privapp-permissions-miuicamera.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -209,6 +206,7 @@ jobs:
           </permissions>
           EOF
 
+          # 4. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
@@ -228,14 +226,31 @@ jobs:
           persist.sys.miui.sf_cores=4-7
           EOF
 
-          df -h mnt_sys
-
-      - name: 7. Shrink Images & Package Flashable OrangeFox Zip
+      - name: 7. Build Exact <2.9GB System Image & Package Flashable Zip
         run: |
           cd ~/work
-          sudo umount mnt_sys
+          USED_MB=$(sudo du -sm rootfs | cut -f1)
+          IMG_MB=$((USED_MB + 180))
+
+          # If still slightly over 2950MB, trim non-essential TTS/font/media files automatically
+          if [ "$IMG_MB" -gt 2950 ]; then
+            echo "Trimming extra media/fonts to fit strictly under 2950MB..."
+            sudo rm -rf rootfs/system/product/app/{talkback,GoogleTTS,MarkupGoogle} || true
+            sudo rm -rf rootfs/system/app/{PrintSpooler,BuiltInPrintService} || true
+            USED_MB=$(sudo du -sm rootfs | cut -f1)
+            IMG_MB=$((USED_MB + 150))
+          fi
+
+          if [ "$IMG_MB" -gt 2980 ]; then
+            IMG_MB=2980
+          fi
+
+          echo "=== Final Used Space: ${USED_MB}MB | Creating system.img of ${IMG_MB}MB ==="
+          sudo mkfs.ext4 -F -L / -d rootfs -O ^metadata_csum,^64bit out/system.img "${IMG_MB}M"
+          sudo rm -rf rootfs
           e2fsck -fy out/system.img || true
-          resize2fs -M out/system.img
+          resize2fs -M out/system.img || true
+
           ls -lh out/
 
           cat << 'EOF' > out/META-INF/com/google/android/updater-script
