@@ -127,25 +127,25 @@ jobs:
           echo "Size before cleaning:"
           sudo du -sh rootfs/
 
-          # 1. Remove all system wallpapers, super wallpapers, AOD, themes, overlays safely with sudo
+          # 1. Remove all system wallpapers, super wallpapers, AOD, themes, overlays safely
           sudo find rootfs/ -iname "*superwallpaper*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*alwaysondisplay*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*wallpaper*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*theme*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*overlay*" -type d -exec rm -rf {} + 2>/dev/null || true
 
-          # 2. Save one default ringtone and one notification safely
+          # 2. Save one default ringtone and one notification safely without broken pipe
           sudo mkdir -p ~/work/saved_audio
-          RING=$(sudo find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" \) | grep -i "ringtone" | head -n 1 || true)
-          if [ -n "$RING" ]; then
-            sudo cp "$RING" ~/work/saved_audio/default_ring.ogg
+          RING=$(sudo find rootfs/ -type f \( -iname "*ringtone*.ogg" -o -iname "*ringtone*.mp3" \) -print -quit 2>/dev/null || true)
+          if [ -n "$RING" ] && [ -f "$RING" ]; then
+            sudo cp "$RING" ~/work/saved_audio/default_ring.ogg 2>/dev/null || true
           fi
-          NOTIF=$(sudo find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" \) | grep -i "notification" | head -n 1 || true)
-          if [ -n "$NOTIF" ]; then
-            sudo cp "$NOTIF" ~/work/saved_audio/default_notif.ogg
+          NOTIF=$(sudo find rootfs/ -type f \( -iname "*notification*.ogg" -o -iname "*notification*.mp3" \) -print -quit 2>/dev/null || true)
+          if [ -n "$NOTIF" ] && [ -f "$NOTIF" ]; then
+            sudo cp "$NOTIF" ~/work/saved_audio/default_notif.ogg 2>/dev/null || true
           fi
 
-          # Clean old media folders completely and recreate with single default tones
+          # Clean old media folders completely and recreate safely with -p
           sudo rm -rf rootfs/system/product/media rootfs/product/media rootfs/system/media/audio
           sudo mkdir -p rootfs/system/media/audio/ringtones rootfs/system/media/audio/notifications
 
