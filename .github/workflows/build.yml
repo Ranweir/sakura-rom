@@ -11,28 +11,38 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h
 
-      - name: 2. Install Unpacking & Image Tools
+      - name: 2. Install All Unpacking & Image Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y aria2 brotli unzip zip p7zip-full python3 python3-pip \
-            android-sdk-libsparse-utils e2fsprogs erofs-utils curl git
+          sudo apt-get install -y aria2 brotli zstd unzip zip p7zip-full python3 python3-pip \
+            android-sdk-libsparse-utils e2fsprogs erofs-utils curl git wget file
           git clone https://github.com/xpirt/sdat2img.git ~/sdat2img
           git clone https://github.com/unix3dgforce/lpunpack.git ~/lpunpack
+          # Download prebuilt official C++ lpunpack binary for 100% compatibility
+          wget -q https://github.com/erfanoabdi/ErfanGSIs/raw/master/tools/lpunpack -O ~/lpunpack_bin || true
+          chmod +x ~/lpunpack_bin || true
 
       - name: 3. Download Sakura Base ROM & Xiaomi.eu MIUI 14 Donor
         run: |
-          mkdir -p ~/work/{base,eu_port,super_ext,mnt_sys,mnt_ven,mnt_ext_sys,mnt_prod,mnt_ext,mnt_mi,out}
+          mkdir -p ~/work/{base,eu_port,super_ext,mnt_sys,mnt_ven,mnt_ext_sys,out}
           cd ~/work
           echo "Downloading Sakura A13 Base ROM (LineageOS 20)..."
           aria2c -x16 -s16 -k1M -o base.zip "https://github.com/ItsVixano-releases/LineageOS_sakura/releases/download/20231012/lineage-20.0-20231012-UNOFFICIAL-sakura.zip"
           echo "Downloading Xiaomi.eu MIUI 14 (spes) Port ROM..."
           aria2c -x16 -s16 -k1M -o port.zip "https://downloads.sourceforge.net/project/xiaomi-eu-multilang-miui-roms/xiaomi.eu/MIUI-STABLE-RELEASES/MIUIv14/xiaomi.eu_multi_HMNote11_V14.0.6.0.TGKMIXM_v14-13.zip"
 
-      - name: 4. Extract Base (boot.img & vendor.img) and Patch Vendor for Camera HAL3
+      - name: 4. Extract Base (boot.img, vendor.img & update-binary) and Patch Vendor
         run: |
           cd ~/work
           unzip -q base.zip -d base/
           cp base/boot.img out/boot.img
+
+          # Save working update-binary directly from Sakura Base ROM
+          mkdir -p out/META-INF/com/google/android
+          if [ -f base/META-INF/com/google/android/update-binary ]; then
+            cp base/META-INF/com/google/android/update-binary out/META-INF/com/google/android/update-binary
+            chmod 755 out/META-INF/com/google/android/update-binary
+          fi
 
           if [ -f base/vendor.new.dat.br ]; then
             brotli -d base/vendor.new.dat.br -o base/vendor.new.dat
@@ -43,7 +53,7 @@ jobs:
           rm -rf base base.zip
 
           e2fsck -fy out/vendor.img || true
-          resize2fs out/vendor.img 900M
+          resize2fs out/vendor.img 950M
           sudo mount -o loop,rw out/vendor.img mnt_ven
 
           sudo tee -a mnt_ven/build.prop << 'EOF'
@@ -62,64 +72,131 @@ jobs:
           e2fsck -fy out/vendor.img || true
           resize2fs -M out/vendor.img
 
-      - name: 5. Extract Xiaomi.eu ROM (Automatic payload.bin or super.img Detection)
+      - name: 5. Bulletproof Unpack Xiaomi.eu & Merge into Single System Image
         run: |
           cd ~/work
-          unzip -q port.zip
+          unzip -q port.zip -d eu_port/
           rm -f port.zip
-
           mkdir -p super_ext
 
-          PAYLOAD=$(find . -name "payload.bin" | head -n 1)
+          echo "=== Checking Port ROM Structure ==="
+          find eu_port/ -maxdepth 3
+
+          # Method 1: Check for payload.bin
+          PAYLOAD=$(find eu_port/ -name "payload.bin" | head -n 1)
           if [ -n "$PAYLOAD" ]; then
-            echo "-> Found payload.bin, extracting using payload-dumper-go..."
+            echo "-> Found payload.bin, extracting..."
             wget -q https://github.com/ssut/payload-dumper-go/releases/download/1.2.2/payload-dumper-go_1.2.2_linux_amd64.tar.gz
             tar -xzf payload-dumper-go_1.2.2_linux_amd64.tar.gz
             ./payload-dumper-go -o super_ext "$PAYLOAD"
             rm -f payload-dumper-go*
-          else
-            SUPER_FILE=$(find . -name "super.img*" | head -n 1)
-            if [ -n "$SUPER_FILE" ]; then
-              echo "-> Found super.img, unpacking..."
-              if [[ "$SUPER_FILE" == *.br ]]; then
-                brotli -d "$SUPER_FILE" -o super.img
-                SUPER_FILE="super.img"
-              fi
-              simg2img "$SUPER_FILE" super.raw.img 2>/dev/null || mv "$SUPER_FILE" super.raw.img
-              python3 ~/lpunpack/lpunpack.py super.raw.img super_ext/ 2>/dev/null || lpunpack super.raw.img super_ext/
-            else
-              echo "Error: Neither payload.bin nor super.img found in the ROM zip!"
-              exit 1
-            fi
           fi
 
-          dd if=/dev/zero of=out/system.img bs=1M count=3350
+          # Method 2: Check for direct .new.dat.br partitions (system, product, etc.)
+          if [ -f eu_port/system.new.dat.br ] || [ -f eu_port/images/system.new.dat.br ]; then
+            echo "-> Found .new.dat.br partitions, converting..."
+            for part in system product system_ext mi_ext; do
+              BR_FILE=$(find eu_port/ -name "${part}.new.dat.br" | head -n 1)
+              TR_FILE=$(find eu_port/ -name "${part}.transfer.list" | head -n 1)
+              if [ -n "$BR_FILE" ]; then
+                brotli -d "$BR_FILE" -o "eu_port/${part}.new.dat"
+                python3 ~/sdat2img/sdat2img.py "$TR_FILE" "eu_port/${part}.new.dat" "super_ext/${part}.img"
+                rm -f "eu_port/${part}.new.dat" "$BR_FILE"
+              fi
+            done
+          fi
+
+          # Method 3: Check for super.img (Raw, Sparse, Brotli, Zstd, or Split)
+          SUPER_FILE=$(find eu_port/ -name "super.img*" | head -n 1)
+          if [ -n "$SUPER_FILE" ] && [ -z "$(ls -A super_ext)" ]; then
+            echo "-> Found $SUPER_FILE, detecting compression type..."
+            FILE_INFO=$(file -b "$SUPER_FILE")
+            echo "File type: $FILE_INFO"
+
+            if [[ "$SUPER_FILE" == *.br ]] || echo "$FILE_INFO" | grep -qi "brotli"; then
+              echo "Decompressing Brotli super.img..."
+              brotli -d "$SUPER_FILE" -o eu_port/super.decompressed.img
+              SUPER_FILE="eu_port/super.decompressed.img"
+              FILE_INFO=$(file -b "$SUPER_FILE")
+            fi
+
+            if [[ "$SUPER_FILE" == *.zst ]] || echo "$FILE_INFO" | grep -qi "Zstandard"; then
+              echo "Decompressing Zstd super.img..."
+              zstd -d "$SUPER_FILE" -o eu_port/super.decompressed.img
+              SUPER_FILE="eu_port/super.decompressed.img"
+              FILE_INFO=$(file -b "$SUPER_FILE")
+            fi
+
+            echo "Converting sparse/raw super image..."
+            if echo "$FILE_INFO" | grep -qi "sparse"; then
+              simg2img "$SUPER_FILE" eu_port/super.raw.img
+              rm -f "$SUPER_FILE"
+            else
+              mv "$SUPER_FILE" eu_port/super.raw.img
+            fi
+
+            echo "Unpacking logical partitions from super.raw.img..."
+            ~/lpunpack_bin eu_port/super.raw.img super_ext/ || \
+            python3 ~/lpunpack/lpunpack.py eu_port/super.raw.img super_ext/ || \
+            7z x eu_port/super.raw.img -osuper_ext/
+            rm -f eu_port/super.raw.img
+          fi
+
+          # Method 4: Check if system.img / product.img already exist directly inside eu_port/images/
+          if [ -z "$(ls -A super_ext)" ]; then
+            for part in system product system_ext mi_ext; do
+              DIRECT_IMG=$(find eu_port/ -name "${part}.img*" | head -n 1)
+              if [ -n "$DIRECT_IMG" ]; then
+                mv "$DIRECT_IMG" "super_ext/${part}.img"
+              fi
+            done
+          fi
+
+          rm -rf eu_port
+          echo "=== Extracted Partitions inside super_ext ==="
+          ls -lh super_ext/
+
+          # Create a large 6000MB temporary system.img so merging NEVER runs out of space
+          dd if=/dev/zero of=out/system.img bs=1M count=6000
           mkfs.ext4 -F -L / -O ^metadata_csum,^64bit out/system.img
-          sudo mount -o loop out/system.img mnt_sys
+          sudo mount -o loop,rw out/system.img mnt_sys
 
           for part in system product system_ext mi_ext; do
             IMG=$(find super_ext/ -name "${part}_a.img" -o -name "${part}.img" | head -n 1)
-            if [ -n "$IMG" ]; then
+            if [ -n "$IMG" ] && [ -s "$IMG" ]; then
+              echo "Extracting partition: $part ($IMG)"
               mkdir -p ~/work/extracted_${part}
+              # Convert if sparse
+              if file -b "$IMG" | grep -qi "sparse"; then
+                simg2img "$IMG" "${IMG}.raw"
+                mv "${IMG}.raw" "$IMG"
+              fi
               if sudo mount -o loop,ro "$IMG" ~/work/mnt_ext_sys 2>/dev/null; then
                 sudo cp -rfp ~/work/mnt_ext_sys/* ~/work/extracted_${part}/
                 sudo umount ~/work/mnt_ext_sys
               else
-                sudo fsck.erofs --extract=~/work/extracted_${part} "$IMG" 2>/dev/null || true
+                sudo fsck.erofs --extract=~/work/extracted_${part} "$IMG" 2>/dev/null || \
+                7z x "$IMG" -o~/work/extracted_${part} -y >/dev/null 2>&1 || true
               fi
+              rm -f "$IMG"
             fi
           done
 
-          if [ -d ~/work/extracted_system ]; then
-            sudo cp -rfp ~/work/extracted_system/* mnt_sys/
+          if [ ! -d ~/work/extracted_system/system ] && [ ! -d ~/work/extracted_system/app ]; then
+            echo "Error: System partition failed to extract properly!"
+            exit 1
           fi
+
+          echo "Merging partitions into non-dynamic Sakura system.img..."
+          sudo cp -rfp ~/work/extracted_system/* mnt_sys/
           sudo rm -rf mnt_sys/product mnt_sys/system/product mnt_sys/system_ext mnt_sys/system/system_ext
           sudo mkdir -p mnt_sys/system/product mnt_sys/system/system_ext
+
           if [ -d ~/work/extracted_product ]; then
-            sudo cp -rfp ~/work/extracted_product/* mnt_sys/system/product/
+            sudo cp -rfp ~/work/extracted_product/* mnt_sys/system/product/ || true
           fi
           if [ -d ~/work/extracted_system_ext ]; then
-            sudo cp -rfp ~/work/extracted_system_ext/* mnt_sys/system/system_ext/
+            sudo cp -rfp ~/work/extracted_system_ext/* mnt_sys/system/system_ext/ || true
           fi
           if [ -d ~/work/extracted_mi_ext/product ]; then
             sudo cp -rfp ~/work/extracted_mi_ext/product/* mnt_sys/system/product/ || true
@@ -130,17 +207,20 @@ jobs:
 
           sudo ln -sf /system/product mnt_sys/product
           sudo ln -sf /system/system_ext mnt_sys/system_ext
-          rm -rf super_ext ~/work/extracted_*
+          sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Debloat & Inject Working Default MIUI Camera + Sakura XML
+      - name: 6. Heavy Debloat & Inject Working Camera + Parallel Animations + Sakura XML
         run: |
           cd ~/work
           SYS="mnt_sys/system"
           PROD="mnt_sys/system/product"
 
-          sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2}
+          # Heavy Debloat so final system.img fits easily inside Sakura's 3GB partition
+          sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2,Photos,Music2,Videos,Velvet,Duo,Chrome,talkback}
+          sudo rm -rf $PROD/priv-app/{Velvet,AndroidAutoStub,Wellbeing,HotwordEnrollmentOKGoogleHEXAGON,HotwordEnrollmentXGoogleHEXAGON}
           sudo rm -rf $PROD/data-app/*
-          sudo rm -rf $SYS/app/{MiuiBugReport,HybridPlatform,Joyose,Mipay,MiuiVideoGlobal}
+          sudo rm -rf $SYS/app/{MiuiBugReport,HybridPlatform,Joyose,Mipay,MiuiVideoGlobal,MSA,AnalyticsCore}
+          sudo find mnt_sys/ -name "*oat" -type d -exec rm -rf {} + 2>/dev/null || true
 
           sudo rm -rf $SYS/etc/device_features/* $PROD/etc/device_features/*
           sudo mkdir -p $SYS/etc/device_features $PROD/etc/device_features
@@ -179,6 +259,7 @@ jobs:
           sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
+          sudo mkdir -p $SYS/etc/permissions
           sudo tee $SYS/etc/permissions/privapp-permissions-miuicamera.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <permissions>
@@ -194,8 +275,8 @@ jobs:
           </permissions>
           EOF
 
-          sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop
-          sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop
+          sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
+          sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
           ro.product.mod_device=sakura_xiaomi_eu
           ro.miui.notch=1
@@ -209,7 +290,11 @@ jobs:
           persist.sys.background_blur_status_default=true
           persist.sys.background_blur_mode=0
           persist.sys.miui_animator_sched.bigcores=0-7
+          persist.sys.miui_animator_sched.sched_threads=2
+          persist.sys.miui.sf_cores=4-7
           EOF
+
+          df -h mnt_sys
 
       - name: 7. Shrink Images & Package Flashable OrangeFox Zip
         run: |
@@ -217,12 +302,12 @@ jobs:
           sudo umount mnt_sys
           e2fsck -fy out/system.img || true
           resize2fs -M out/system.img
+          ls -lh out/
 
-          mkdir -p out/META-INF/com/google/android
           cat << 'EOF' > out/META-INF/com/google/android/updater-script
           ui_print("==========================================");
           ui_print("   Xiaomi.eu MIUI 14 Port for Sakura      ");
-          ui_print("   Android 13 | Working Default Camera    ");
+          ui_print("   Android 13 | Smooth Parallel Anim      ");
           ui_print("==========================================");
           ui_print("-> Flashing Kernel (boot.img)...");
           package_extract_file("boot.img", "/dev/block/bootdevice/by-name/boot");
@@ -233,11 +318,9 @@ jobs:
           ui_print("-> Done! Format Data if coming from AOSP.");
           EOF
 
-          wget -q https://github.com/LineageOS/android_able/raw/lineage-20.0/update-binary -O out/META-INF/com/google/android/update-binary || true
-          chmod 755 out/META-INF/com/google/android/update-binary
-
           cd out
           zip -r1 ~/MIUI14_EU_Sakura_A13_Port.zip boot.img vendor.img system.img META-INF/
+          ls -lh ~/MIUI14_EU_Sakura_A13_Port.zip
 
       - name: 8. Upload Flashable ROM Artifact
         uses: actions/upload-artifact@v4
