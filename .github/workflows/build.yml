@@ -1,20 +1,6 @@
 name: Build MIUI 14 Xiaomi.eu for Redmi 6 Pro (Sakura)
 
-on:
-  workflow_dispatch:
-    inputs:
-      base_rom_url:
-        description: 'Direct URL to Sakura Android 13 AOSP Base ROM (.zip)'
-        required: true
-        default: 'https://downloads.sourceforge.net/project/aosp-kulo/CherishOS/Cherish-OS-v4.12-20230918-0922-sakura-UNOFFICIAL-GApps.zip'
-      eu_port_url:
-        description: 'Direct URL to Xiaomi.eu MIUI 14 HMNote11 (spes) A13 ROM (.zip)'
-        required: true
-        default: 'https://downloads.sourceforge.net/project/xiaomi-eu-multilang-miui-roms/xiaomi.eu/MIUI-STABLE-RELEASES/MIUIv14/xiaomi.eu_multi_HMNote11_V14.0.6.0.TGKMIXM_v14-13.zip'
-      universal_cam_url:
-        description: '(Optional) Direct URL to Universal Leica/ANX MiuiCamera.apk (Leave blank to use patched EU stock camera)'
-        required: false
-        default: ''
+on: [push, workflow_dispatch]
 
 jobs:
   port_rom:
@@ -31,7 +17,6 @@ jobs:
           sudo apt-get install -y aria2 brotli unzip zip p7zip-full python3 python3-pip \
             android-sdk-libsparse-utils e2fsprogs erofs-utils curl git
           git clone https://github.com/xpirt/sdat2img.git ~/sdat2img
-          # Install lpunpack for unpacking Xiaomi.eu super.img
           pip3 install lpunpack
 
       - name: 3. Download Sakura Base ROM & Xiaomi.eu MIUI 14 Donor
@@ -39,9 +24,9 @@ jobs:
           mkdir -p ~/work/{base,eu_port,super_ext,mnt_sys,mnt_ven,mnt_ext_sys,mnt_prod,mnt_ext,mnt_mi,out}
           cd ~/work
           echo "Downloading Sakura A13 Base ROM..."
-          aria2c -x16 -s16 -k1M -o base.zip "${{ github.event.inputs.base_rom_url }}"
+          aria2c -x16 -s16 -k1M -o base.zip "https://downloads.sourceforge.net/project/aosp-kulo/CherishOS/Cherish-OS-v4.12-20230918-0922-sakura-UNOFFICIAL-GApps.zip"
           echo "Downloading Xiaomi.eu MIUI 14 (spes) Port ROM..."
-          aria2c -x16 -s16 -k1M -o port.zip "${{ github.event.inputs.eu_port_url }}"
+          aria2c -x16 -s16 -k1M -o port.zip "https://downloads.sourceforge.net/project/xiaomi-eu-multilang-miui-roms/xiaomi.eu/MIUI-STABLE-RELEASES/MIUIv14/xiaomi.eu_multi_HMNote11_V14.0.6.0.TGKMIXM_v14-13.zip"
 
       - name: 4. Extract Base (boot.img & vendor.img) and Patch Vendor for Camera HAL3
         run: |
@@ -57,23 +42,19 @@ jobs:
           fi
           rm -rf base base.zip
 
-          # Expand & Mount vendor.img to inject Camera2 API (HAL3) & Aux Camera flags
           e2fsck -fy out/vendor.img || true
           resize2fs out/vendor.img 900M
           sudo mount -o loop,rw out/vendor.img mnt_ven
 
           sudo tee -a mnt_ven/build.prop << 'EOF'
-
-          # --- Sakura MIUI 14 EU Camera HAL3 & Dual Sensor Fixes ---
           persist.vendor.camera.HAL3.enabled=1
           persist.camera.HAL3.enabled=1
           persist.vendor.camera.eis.enable=1
-           persist.camera.expose.aux=1
+          persist.camera.expose.aux=1
           vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera,com.miui.camera
           camera.hal1.packagelist=none
           EOF
 
-          # Disable force-encrypt in fstab so it boots cleanly on OrangeFox
           sudo sed -i 's/fileencryption=ice/encryptable=footer/g' mnt_ven/etc/fstab.qcom || true
           sudo sed -i 's/forceencrypt=/encryptable=/g' mnt_ven/etc/fstab.qcom || true
 
@@ -91,23 +72,17 @@ jobs:
           if [[ "$SUPER_FILE" == *.br ]]; then
             brotli -d "$SUPER_FILE" -o eu_port/super.img
             SUPER_FILE="eu_port/super.img"
-          elif [[ "$SUPER_FILE" == *.zst ]]; then
-            zstd -d "$SUPER_FILE" -o eu_port/super.img
-            SUPER_FILE="eu_port/super.img"
           fi
 
-          # Convert sparse super to raw if needed, then unpack partitions
           simg2img "$SUPER_FILE" eu_port/super.raw.img 2>/dev/null || mv "$SUPER_FILE" eu_port/super.raw.img
           rm -rf eu_port/images
           lpunpack eu_port/super.raw.img super_ext/
           rm -f eu_port/super.raw.img
 
-          # Create 3.3GB ext4 system.img for Sakura
           dd if=/dev/zero of=out/system.img bs=1M count=3350
           mkfs.ext4 -F -L / -O ^metadata_csum,^64bit out/system.img
           sudo mount -o loop out/system.img mnt_sys
 
-          # Extract/Mount system, product, system_ext, mi_ext (handles both ext4 and erofs)
           for part in system product system_ext mi_ext; do
             IMG=$(find super_ext/ -name "${part}_a.img" -o -name "${part}.img" | head -n 1)
             if [ -n "$IMG" ]; then
@@ -121,7 +96,6 @@ jobs:
             fi
           done
 
-          # Merge all partitions into Sakura's single SAR system.img
           sudo cp -rfp ~/work/extracted_system/* mnt_sys/
           sudo rm -rf mnt_sys/product mnt_sys/system/product mnt_sys/system_ext mnt_sys/system/system_ext
           sudo mkdir -p mnt_sys/system/product mnt_sys/system/system_ext
@@ -144,12 +118,10 @@ jobs:
           SYS="mnt_sys/system"
           PROD="mnt_sys/system/product"
 
-          # 1. Debloat heavy apps so final system.img shrinks under 2.85GB (Sakura stock /system size)
           sudo rm -rf $PROD/app/{MiBrowser,MiMover,Health,Updater,YouTube,Maps,Drive,Gmail2}
           sudo rm -rf $PROD/data-app/*
           sudo rm -rf $SYS/app/{MiuiBugReport,HybridPlatform,Joyose,Mipay,MiuiVideoGlobal}
 
-          # 2. Write Native Sakura Camera & Device Features XML
           sudo rm -rf $SYS/etc/device_features/* $PROD/etc/device_features/*
           sudo mkdir -p $SYS/etc/device_features $PROD/etc/device_features
 
@@ -161,7 +133,6 @@ jobs:
               <string name="support_device_name">Redmi 6 Pro</string>
               <integer name="cpu_max_freq">200</integer>
               <bool name="support_dual_sd_card">true</bool>
-              <!-- Sakura IMX486/OV12A10 + OV5675 Dual Camera Configuration -->
               <bool name="support_camera_4k_quality">true</bool>
               <bool name="support_camera_audio_focus">false</bool>
               <bool name="support_camera_manual_function">true</bool>
@@ -182,22 +153,12 @@ jobs:
           </features>
           EOF
 
-          # Copy & symlink to both /system/etc and /product/etc so MiuiCamera always finds it
           sudo cp $SYS/etc/device_features/sakura.xml $PROD/etc/device_features/sakura.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
           sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
-          # 3. Optional Custom Universal Camera APK override + Whitelist Permissions
-          if [ -n "${{ github.event.inputs.universal_cam_url }}" ]; then
-            CAM_DIR=$(find mnt_sys/ -type d -name "MiuiCamera" | head -n 1)
-            sudo rm -rf "$CAM_DIR/oat"
-            sudo aria2c -x16 -s16 -o "$CAM_DIR/MiuiCamera.apk" "${{ github.event.inputs.universal_cam_url }}"
-            sudo chmod 644 "$CAM_DIR/MiuiCamera.apk"
-          fi
-
-          # Grant MiuiCamera full signature priv-app permissions so Android 13 doesn't block boot
           sudo tee $SYS/etc/permissions/privapp-permissions-miuicamera.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <permissions>
@@ -213,12 +174,9 @@ jobs:
           </permissions>
           EOF
 
-          # 4. Patch system/build.prop for Sakura Identity, Camera HAL3 & Smooth Blur
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop
           sudo tee -a $SYS/build.prop << 'EOF'
-
-          # --- Sakura MIUI 14 EU Port Spoofing & Camera Props ---
           ro.product.mod_device=sakura_xiaomi_eu
           ro.miui.notch=1
           persist.vendor.camera.HAL3.enabled=1
@@ -226,8 +184,6 @@ jobs:
           persist.vendor.camera.eis.enable=1
           vendor.camera.aux.packagelist=org.codeaurora.snapcam,com.android.camera
           camera.hal1.packagelist=none
-
-          # --- Adreno 506 Smooth Blur & Parallel Animation Tuning ---
           ro.surface_flinger.supports_background_blur=1
           persist.sys.background_blur_supported=true
           persist.sys.background_blur_status_default=true
@@ -242,7 +198,6 @@ jobs:
           e2fsck -fy out/system.img || true
           resize2fs -M out/system.img
 
-          # Build OrangeFox META-INF installer script
           mkdir -p out/META-INF/com/google/android
           cat << 'EOF' > out/META-INF/com/google/android/updater-script
           ui_print("==========================================");
@@ -258,8 +213,6 @@ jobs:
           ui_print("-> Done! Format Data if coming from AOSP.");
           EOF
 
-          curl -sL https://raw.githubusercontent.com/topjohnwu/Magisk/master/scripts/update_binary.sh -o out/META-INF/com/google/android/update-binary || true
-          # Use standard edify update-binary from AOSP recovery
           wget -q https://github.com/LineageOS/android_able/raw/lineage-20.0/update-binary -O out/META-INF/com/google/android/update-binary || true
           chmod 755 out/META-INF/com/google/android/update-binary
 
