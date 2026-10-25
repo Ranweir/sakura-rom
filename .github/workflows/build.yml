@@ -121,17 +121,16 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Strip 5 Heavy Points (Fonts, Overlays, Cust, Demos, Speech) & Bloat
+      - name: 6. Custom Clean (Keep Theme Store, Remove Cloud, Analytics, Payment, Wellbeing, Glance & Bloat)
         run: |
           cd ~/work
-          echo "Size before extreme cleaning:"
+          echo "Size before cleaning:"
           sudo du -sh rootfs/
 
-          # 1. Remove Wallpapers, SuperWallpapers, AOD, Themes, Overlays
+          # 1. Remove Wallpapers, SuperWallpapers, AOD, Overlays, NFC, VR, XR, Print, TTS
           sudo find rootfs/ -iname "*superwallpaper*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*alwaysondisplay*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*wallpaper*" -type d -exec rm -rf {} + 2>/dev/null || true
-          sudo find rootfs/ -iname "*theme*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*nfc*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*vr*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*xr*" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -139,7 +138,7 @@ jobs:
           sudo find rootfs/ -iname "*tts*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*speech*" -exec rm -rf {} + 2>/dev/null || true
 
-          # 2. Target the 5 Specific Points: Heavy Fonts, Overlays, Cust, Demos/Manuals, ICU data
+          # 2. Target Fonts, ICU, Cust, Demos, Manuals
           sudo find rootfs/ -iname "*miisans*" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -iname "*cjk*" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -iname "*chinese*" -type f -delete 2>/dev/null || true
@@ -149,8 +148,8 @@ jobs:
           sudo find rootfs/ -iname "*safety*" -exec rm -rf {} + 2>/dev/null || true
           sudo rm -rf rootfs/system/cust rootfs/product/cust rootfs/system/mi_ext/cust 2>/dev/null || true
 
-          # 3. Remove re-installable & non-essential apps
-          for app in Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence; do
+          # 3. Remove Requested Bloat (Cloud, Analytics, Payment, Wellbeing, Glance) + Re-installable apps (Keeping Theme Store safe)
+          for app in MiCloudSync FindDevice XiaomiAccount Analytics BugReport Feedback ExceptionReporter SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence; do
             sudo find rootfs/ -iname "*${app}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
@@ -160,7 +159,7 @@ jobs:
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          echo "Size after extreme cleaning:"
+          echo "Size after cleaning:"
           sudo du -sh rootfs/
 
           # 5. Inject Sakura Device Features XML
@@ -198,8 +197,8 @@ jobs:
           sudo cp $SYS/etc/device_features/sakura.xml $PROD/etc/device_features/sakura.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
-          sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
-          sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
+          sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
+          sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
           # 6. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
