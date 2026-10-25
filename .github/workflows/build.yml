@@ -121,10 +121,10 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Maximum Stripping Clean (Audio Triggers, AI, Bloat & Keeping Core UI/Theme Store)
+      - name: 6. Aggressive Space Saving & Deep System Strip
         run: |
           cd ~/work
-          echo "Size before cleaning:"
+          echo "Size before aggressive space saving:"
           sudo du -sh rootfs/
 
           # 1. Remove Wallpapers, SuperWallpapers, AOD, Overlays, NFC, VR, XR, Print, TTS, AI models
@@ -149,7 +149,8 @@ jobs:
           sudo find rootfs/ -iname "*dolby*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*dirac*" -exec rm -rf {} + 2>/dev/null || true
 
-          # 3. Remove heavy fonts, ICU, cust, demos, manuals, analytics, cloud, payment, wellbeing, glance
+          # 3. Aggressive Space Saving: Remove heavy unused APEX files, fonts, ICU, cust, demos, manuals, analytics
+          sudo find rootfs/ -name "*.apex" -not -name "*vndk*" -not -name "*runtime*" -not -name "*permission*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*miisans*" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -iname "*cjk*" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -iname "*chinese*" -type f -delete 2>/dev/null || true
@@ -170,7 +171,7 @@ jobs:
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          echo "=== Size after cleaning ==="
+          echo "=== Size after aggressive space saving ==="
           sudo du -sh rootfs/
 
           # 6. Inject Sakura Device Features XML
@@ -208,8 +209,8 @@ jobs:
           sudo cp $SYS/etc/device_features/sakura.xml $PROD/etc/device_features/sakura.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
-          sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
-          sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
+          sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
+          sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
           # 7. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
