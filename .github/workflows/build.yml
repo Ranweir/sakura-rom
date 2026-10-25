@@ -121,7 +121,7 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Precision Clean (Keep Theme Store, Security, Camera, Blur & Strip All Bloat)
+      - name: 6. Maximum Stripping Clean (Audio Triggers, AI, Bloat & Keeping Core UI/Theme Store)
         run: |
           cd ~/work
           echo "Size before cleaning:"
@@ -143,7 +143,13 @@ jobs:
           sudo find rootfs/ -iname "*ocr*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*appvault*" -exec rm -rf {} + 2>/dev/null || true
 
-          # 2. Remove heavy fonts, ICU, cust, demos, manuals, analytics, cloud, payment, wellbeing, glance
+          # 2. Remove Sound Triggers and Audio Extras
+          sudo find rootfs/ -iname "*soundtrigger*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*listensound*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*dolby*" -exec rm -rf {} + 2>/dev/null || true
+          sudo find rootfs/ -iname "*dirac*" -exec rm -rf {} + 2>/dev/null || true
+
+          # 3. Remove heavy fonts, ICU, cust, demos, manuals, analytics, cloud, payment, wellbeing, glance
           sudo find rootfs/ -iname "*miisans*" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -iname "*cjk*" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -iname "*chinese*" -type f -delete 2>/dev/null || true
@@ -153,21 +159,21 @@ jobs:
           sudo find rootfs/ -iname "*safety*" -exec rm -rf {} + 2>/dev/null || true
           sudo rm -rf rootfs/system/cust rootfs/product/cust rootfs/system/mi_ext/cust 2>/dev/null || true
 
-          # 3. Remove non-essential apps (Keeping Theme Store, Security/SecurityCenter, Camera safe)
+          # 4. Remove non-essential apps (Keeping Theme Store, Security/SecurityCenter, Camera safe)
           for app in MiCloudSync FindDevice XiaomiAccount Analytics BugReport Feedback ExceptionReporter SoterService PaymentService Wellbeing Glance Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MIUIVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence ManagedProvisioning Cast Watermark Filter; do
             sudo find rootfs/ -iname "*${app}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
-          # 4. Remove pre-compiled oat/vdex/art files to save massive space (~1.5GB)
+          # 5. Remove pre-compiled oat/vdex/art files to save massive space (~1.5GB)
           sudo find rootfs/ -name "oat" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -name "*.vdex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          echo "=== Size after precise cleaning ==="
+          echo "=== Size after cleaning ==="
           sudo du -sh rootfs/
 
-          # 5. Inject Sakura Device Features XML
+          # 6. Inject Sakura Device Features XML
           SYS="rootfs/system"
           PROD="rootfs/system/product"
           sudo mkdir -p $SYS/etc/device_features $PROD/etc/device_features
@@ -203,9 +209,9 @@ jobs:
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
-          sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
+          sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
 
-          # 6. Camera Permissions
+          # 7. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
           sudo tee $SYS/etc/permissions/privapp-permissions-miuicamera.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -222,7 +228,7 @@ jobs:
           </permissions>
           EOF
 
-          # 7. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
+          # 8. Build.prop Tweaks (Camera HAL3 + Smooth Parallel Animations + Blur)
           sudo sed -i 's/ro.product.system.device=.*/ro.product.system.device=sakura/g' $SYS/build.prop || true
           sudo sed -i 's/ro.product.system.name=.*/ro.product.system.name=sakura/g' $SYS/build.prop || true
           sudo tee -a $SYS/build.prop << 'EOF'
