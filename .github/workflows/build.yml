@@ -121,24 +121,33 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Maximum Overdrive Clean & Strip Non-Essentials across rootfs
+      - name: 6. Remove Wallpapers, Keep Only 1 Ringtone & 1 Notification Tone + Deep Clean
         run: |
           cd ~/work
-          echo "Size before extreme cleaning:"
+          echo "Size before cleaning:"
           sudo du -sh rootfs/
 
-          # 1. Universally remove all SuperWallpapers, AOD, heavy media, themes, wallpapers, overlays
+          # 1. Remove all system wallpapers, super wallpapers, AOD, themes, overlays
           sudo find rootfs/ -iname "*superwallpaper*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*alwaysondisplay*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*wallpaper*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*theme*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*overlay*" -type d -exec rm -rf {} + 2>/dev/null || true
+
+          # 2. Clean ringtones/notifications safely: Keep only 1 default ringtone and 1 notification tone
+          mkdir -p ~/work/saved_audio
+          find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" \) | grep -i "ringtone" | head -n 1 | xargs -I {} cp {} ~/work/saved_audio/ default_ring.ogg 2>/dev/null || true
+          find rootfs/ -type f \( -name "*.ogg" -o -name "*.mp3" \) | grep -i "notification" | head -n 1 | xargs -I {} cp {} ~/work/saved_audio/ default_notif.ogg 2>/dev/null || true
           
-          # 2. Remove audio/media/ringtone folders completely
+          # Delete all audio/media folders and recreate with just the single default tones
           sudo find rootfs/ -type d -name "media" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -type d -name "ringtone*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -type d -name "alarm*" -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -type d -name "notification*" -exec rm -rf {} + 2>/dev/null || true
+
+          sudo mkdir -p rootfs/system/media/audio/ringtones rootfs/system/media/audio/notifications
+          [ -f ~/work/saved_audio/default_ring.ogg ] && sudo cp ~/work/saved_audio/default_ring.ogg rootfs/system/media/audio/ringtones/MiRemix.ogg
+          [ -f ~/work/saved_audio/default_notif.ogg ] && sudo cp ~/work/saved_audio/default_notif.ogg rootfs/system/media/audio/notifications/Default.ogg
 
           # 3. Universally remove non-essential bloatware apps by name anywhere in rootfs
           for app in MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback Notes Calculator Weather MiRecorder MiCalendar Scanner ScreenRecorder YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto MSA AnalyticsCore Metok SettingsIntelligence HybridPlatform Joyose; do
@@ -151,7 +160,7 @@ jobs:
           sudo find rootfs/ -name "*.odex" -type f -delete 2>/dev/null || true
           sudo find rootfs/ -name "*.art" -type f -delete 2>/dev/null || true
 
-          echo "Size after extreme cleaning:"
+          echo "Size after cleaning:"
           sudo du -sh rootfs/
 
           # 5. Inject Sakura Device Features XML
@@ -189,8 +198,8 @@ jobs:
           sudo cp $SYS/etc/device_features/sakura.xml $PROD/etc/device_features/sakura.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
-          sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
-          sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
+          sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
+          sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
           # 6. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
