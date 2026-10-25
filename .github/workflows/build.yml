@@ -121,7 +121,7 @@ jobs:
           sudo ln -sf /system/system_ext rootfs/system_ext
           sudo rm -rf super_ext ~/work/extracted_*
 
-      - name: 6. Remove Wallpapers & Clean Bloat (Keeping Original Ringtones)
+      - name: 6. Remove Wallpapers, Re-installable Apps & Bloat
         run: |
           cd ~/work
           echo "Size before cleaning:"
@@ -134,8 +134,8 @@ jobs:
           sudo find rootfs/ -iname "*theme*" -type d -exec rm -rf {} + 2>/dev/null || true
           sudo find rootfs/ -iname "*overlay*" -type d -exec rm -rf {} + 2>/dev/null || true
 
-          # 2. Universally remove non-essential bloatware apps by name across rootfs
-          for app in MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback Notes Calculator Weather MiRecorder MiCalendar Scanner ScreenRecorder YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence; do
+          # 2. Remove re-installable system apps (Gallery, Notes, Calculator, GetApps, Weather, Music, Video, Scanner, etc.)
+          for app in Gallery Notes Calculator GetApps Weather Scanner ScreenRecorder MiMusic MiVideo MiBrowser MiMover Health Updater YouTube Maps Drive Gmail2 Photos Music2 Videos Velvet Duo Chrome talkback MiRecorder MiCalendar YellowPage QuickApp Turbo GameCenter MiShare VoiceTrigger SoundRecorder MiuiBugReport HybridPlatform Joyose Mipay MiuiVideoGlobal MSA AnalyticsCore BasicDreams PhotoTable EasterEgg BookmarkProvider CatchLog Traceur BackupRestoreConfirmation CallLogBackup SharedStorageBackup Tag UserDictionaryProvider GoogleTTS MarkupGoogle PrintSpooler BuiltInPrintService MiuiExtraPhoto Metok SettingsIntelligence Notes; do
             sudo find rootfs/ -iname "*${app}*" -exec rm -rf {} + 2>/dev/null || true
           done
 
@@ -183,8 +183,8 @@ jobs:
           sudo cp $SYS/etc/device_features/sakura.xml $PROD/etc/device_features/sakura.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
           sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
-          sudo ln -sf sakura.xml $SYS/etc/device_features/spes.xml
-          sudo ln -sf sakura.xml $SYS/etc/device_features/spesn.xml
+          sudo ln -sf sakura.xml $PROD/etc/device_features/spes.xml
+          sudo ln -sf sakura.xml $PROD/etc/device_features/spesn.xml
 
           # 5. Camera Permissions
           sudo mkdir -p $SYS/etc/permissions
