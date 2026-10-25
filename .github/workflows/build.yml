@@ -17,6 +17,7 @@ jobs:
           sudo apt-get install -y aria2 brotli unzip zip p7zip-full python3 python3-pip \
             android-sdk-libsparse-utils e2fsprogs erofs-utils curl git
           git clone https://github.com/xpirt/sdat2img.git ~/sdat2img
+          git clone https://github.com/unix3dgforce/lpunpack.git ~/lpunpack
 
       - name: 3. Download Sakura Base ROM & Xiaomi.eu MIUI 14 Donor
         run: |
@@ -61,30 +62,43 @@ jobs:
           e2fsck -fy out/vendor.img || true
           resize2fs -M out/vendor.img
 
-      - name: 5. Extract Xiaomi.eu payload.bin & Merge into Single System Image
+      - name: 5. Extract Xiaomi.eu ROM (Automatic payload.bin or super.img Detection)
         run: |
           cd ~/work
           unzip -q port.zip
           rm -f port.zip
 
-          PAYLOAD=$(find . -name "payload.bin" | head -n 1)
-          if [ -z "$PAYLOAD" ]; then
-            echo "Error: payload.bin not found inside port.zip!"
-            exit 1
-          fi
-
-          wget -q https://github.com/ssut/payload-dumper-go/releases/download/1.2.2/payload-dumper-go_1.2.2_linux_amd64.tar.gz
-          tar -xzf payload-dumper-go_1.2.2_linux_amd64.tar.gz
           mkdir -p super_ext
-          ./payload-dumper-go -o super_ext "$PAYLOAD"
-          rm -f payload-dumper-go*
+
+          PAYLOAD=$(find . -name "payload.bin" | head -n 1)
+          if [ -n "$PAYLOAD" ]; then
+            echo "-> Found payload.bin, extracting using payload-dumper-go..."
+            wget -q https://github.com/ssut/payload-dumper-go/releases/download/1.2.2/payload-dumper-go_1.2.2_linux_amd64.tar.gz
+            tar -xzf payload-dumper-go_1.2.2_linux_amd64.tar.gz
+            ./payload-dumper-go -o super_ext "$PAYLOAD"
+            rm -f payload-dumper-go*
+          else
+            SUPER_FILE=$(find . -name "super.img*" | head -n 1)
+            if [ -n "$SUPER_FILE" ]; then
+              echo "-> Found super.img, unpacking..."
+              if [[ "$SUPER_FILE" == *.br ]]; then
+                brotli -d "$SUPER_FILE" -o super.img
+                SUPER_FILE="super.img"
+              fi
+              simg2img "$SUPER_FILE" super.raw.img 2>/dev/null || mv "$SUPER_FILE" super.raw.img
+              python3 ~/lpunpack/lpunpack.py super.raw.img super_ext/ 2>/dev/null || lpunpack super.raw.img super_ext/
+            else
+              echo "Error: Neither payload.bin nor super.img found in the ROM zip!"
+              exit 1
+            fi
+          fi
 
           dd if=/dev/zero of=out/system.img bs=1M count=3350
           mkfs.ext4 -F -L / -O ^metadata_csum,^64bit out/system.img
           sudo mount -o loop out/system.img mnt_sys
 
           for part in system product system_ext mi_ext; do
-            IMG=$(find super_ext/ -name "${part}.img" | head -n 1)
+            IMG=$(find super_ext/ -name "${part}_a.img" -o -name "${part}.img" | head -n 1)
             if [ -n "$IMG" ]; then
               mkdir -p ~/work/extracted_${part}
               if sudo mount -o loop,ro "$IMG" ~/work/mnt_ext_sys 2>/dev/null; then
